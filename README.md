@@ -1,3 +1,17 @@
+
+
++ 1. 生成并修改 c_cpp_properties.json 文件
+添加 `"compileCommands": "${workspaceFolder}/build/compile_commands.json"`
++ 2. catkin_make 设置 task.json文件
+Ctrl+shift+P进入命令模式，搜索：Configure Task
+此时会在.vscode文件夹下面自动生成task.json文件
+"label": "catkin_make"
+Ctrl+Shift+B编译工作区
++ 3. GDB debug的配置 launch.json文件
+点击左侧工具栏”Debug“，点击”齿轮“按钮，此时.vscode文件夹下面就会自动生成launch.json文件
+
+---
+
 # Cube SLAM #
 This code contains a basic implementation for Cube SLAM. Given RGB and 2D object detection, the algorithm detects 3D cuboids from each frame then formulate an object SLAM to optimize both camera pose and cuboid poses. ```object_slam``` is main package. ```detect_3d_cuboid``` is the C++ version of single image cuboid detection, corresponding to a [matlab version](https://github.com/shichaoy/matlab_cuboid_detect).
 

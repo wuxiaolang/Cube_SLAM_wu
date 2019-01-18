@@ -605,7 +605,7 @@ int main(int argc,char* argv[])
 
     
     cout<<""<<endl;
-    cout<<"base_folder   "<<base_folder<<endl;
+    cout<<"base_folder   "<<base_folder<<endl; 
     if (online_detect_mode)
 	ROS_WARN_STREAM("Online detect object mode !!\n");
     else
