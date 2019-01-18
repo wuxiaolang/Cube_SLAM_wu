@@ -1,3 +1,7 @@
+/** @file detect_3d_cuboid.h	定义立方体类
+ * 
+ */
+
 #pragma once
 
 // std c
@@ -57,16 +61,27 @@ class detect_3d_cuboid
 public:
       cam_pose_infos cam_pose;
       cam_pose_infos cam_pose_raw;
+      
+      // 设置内参.
       void set_calibration(const Eigen::Matrix3d& Kalib);
       void set_cam_pose(const Eigen::Matrix4d& transToWolrd);
 
       // object detector needs image, camera pose, and 2D bounding boxes(n*5, each row: xywh+prob)  long edges: n*4.  all number start from 0
       void detect_cuboid(const cv::Mat& rgb_img, const Eigen::Matrix4d& transToWolrd,const Eigen::MatrixXd& obj_bbox_coors, Eigen::MatrixXd edges,
 			 std::vector<ObjectSet>& all_object_cuboids);      
-            
+      
+      ///@param   whether_plot_detail_images	是否显示细节图：边缘检测，Canny检测，距离归一化.
       bool whether_plot_detail_images = false;
-      bool whether_plot_final_images = false;
-      bool whether_save_final_images = false; cv::Mat cuboids_2d_img;  // save to this opencv mat
+      ///@param   whether_plot_final_images	是否显示原始图+边框.
+      bool whether_plot_final_images = false;	// 显示检测结果图.
+      bool whether_save_final_images = false; 	// 保存检测结果图.
+      cv::Mat cuboids_2d_img;  // save to this opencv mat
+	  
+      /** @param  print_details		输出检测细节.
+       * Configuration 2 fails at corner 4, outside box
+       * Configuration 1 fails at edge 1-4, too short
+       * Configuration 2 fails at corner 4, outside box
+       */
       bool print_details = false;
       
       // important mode parameters for proposal generation.

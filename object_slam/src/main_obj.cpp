@@ -340,43 +340,55 @@ void publish_all_poses(std::vector<tracking_frame*> all_frames,std::vector<objec
 }
 
 
-//NOTE offline_pred_objects and init_frame_poses are not used in online_detect_mode! truth cam pose of first frame is used.
+//NOTE 在线检测模式不使用 pred_frame_objects 和 init_frame_poses.
+//     truth_frame_poses 仅使用第一帧.
 void incremental_build_graph(Eigen::MatrixXd& offline_pred_frame_objects, Eigen::MatrixXd& init_frame_poses, Eigen::MatrixXd& truth_frame_poses)
 {  
+    // 读入 TUM 数据集相机内参calib.
     Eigen::Matrix3d calib; 
-    calib<<535.4,  0,  320.1,   // for TUM cabinet data.
+    calib<<535.4,  0,  320.1,   
 	    0,  539.2, 247.6,
 	    0,      0,     1;    
     
+    // 帧数，从truth_frame_poses中获取.
     int total_frame_number = truth_frame_poses.rows();
 
-    // detect all frames' cuboids.
+    // 检测所有帧中的立方体，定义为一个detect_3d_cuboid类的detect_cuboid_obj对象.
     detect_3d_cuboid detect_cuboid_obj;
-    detect_cuboid_obj.whether_plot_detail_images = false;
-    detect_cuboid_obj.whether_plot_final_images = false;
-    detect_cuboid_obj.print_details = false;  // false  true
-    detect_cuboid_obj.set_calibration(calib);
-    detect_cuboid_obj.whether_sample_bbox_height = false;
-    detect_cuboid_obj.nominal_skew_ratio = 2;
-    detect_cuboid_obj.whether_save_final_images = true;
+    detect_cuboid_obj.whether_plot_detail_images = false;	// 不绘制检测细节图像.
+    detect_cuboid_obj.whether_plot_final_images = false;	// 不绘制检测结果图.
+    detect_cuboid_obj.print_details = false;  			// 不输出检测细节.
+    detect_cuboid_obj.set_calibration(calib);			// 设置内参.
+    detect_cuboid_obj.whether_sample_bbox_height = false;	// TODO
+    detect_cuboid_obj.nominal_skew_ratio = 2;			// TODO
+    detect_cuboid_obj.whether_save_final_images = true;		// 保存检测结果图.
     
-
+    // 定义线检测line_lbd_detect类的line_lbd_obj对象.
     line_lbd_detect line_lbd_obj;
-    line_lbd_obj.use_LSD = true;
-    line_lbd_obj.line_length_thres = 15;  // remove short edges
+    line_lbd_obj.use_LSD = false;		// 使用 LSD 或 detector 线检测.
+    line_lbd_obj.line_length_thres = 15;  	// 去除较短的边线.
     
-    
-    // graph optimization.
-    //NOTE in this example, there is only one object!!! perfect association
+    //NOTE G2O图优化 graph optimization.
+    //in this example, there is only one object!!! perfect association
+    //【STEP1】 构造一个名为 graph 的求解器.
     g2o::SparseOptimizer graph;
+    
+    //【STEP2】 使用Cholmod中的线性方程求解器得到 linearSolver
     g2o::BlockSolverX::LinearSolverType* linearSolver;
     linearSolver = new g2o::LinearSolverDense<g2o::BlockSolverX::PoseMatrixType>();
+    
+    //【STEP3】 再用稀疏矩阵块求解器 solver_ptr
     g2o::BlockSolverX * solver_ptr = new g2o::BlockSolverX(linearSolver);
+    
+    //【STEP4】 使用梯度下降算法求解上面的 solver_ptr 得到 solver
     g2o::OptimizationAlgorithmLevenberg* solver = new g2o::OptimizationAlgorithmLevenberg(solver_ptr);
-    graph.setAlgorithm(solver);    graph.setVerbose(false);
+    
+    graph.setAlgorithm(solver);		// 设置求解器.    
+    graph.setVerbose(false);		// 是否打开调试输出.
 
     
     // only first truth pose is used. to directly visually compare with truth pose. also provide good roll/pitch
+    // 
     g2o::SE3Quat fixed_init_cam_pose_Twc(truth_frame_poses.row(0).tail<7>());
     
     // save optimization results of each frame
@@ -591,45 +603,60 @@ void incremental_build_graph(Eigen::MatrixXd& offline_pred_frame_objects, Eigen:
     publish_all_poses(all_frames, cube_pose_opti_history,cube_pose_raw_detected_history,truth_frame_poses);      
 }
 
-
-
 int main(int argc,char* argv[])
 {
+    // 初始化节点与命名空间.
     ros::init(argc, argv, "object_slam");
-    
     ros::NodeHandle nh;
 
+    /** 初始化参数.
+     *  @param	base_folder		data文件目录：~/catkin_object/src/cube_slam/object_slam/data
+     *  @param	online_detect_mode	检测模式，默认为true，在线检测，false为使用离线相机位姿
+     *  @param	save_results_to_txt	是否保存结果，默认为false
+     */
     nh.param ("/base_folder", base_folder, ros::package::getPath("object_slam")+"/data/");
     nh.param ("/online_detect_mode", online_detect_mode, true);
     nh.param ("/save_results_to_txt", save_results_to_txt, false);
-
     
+    // 输出参数信息.
     cout<<""<<endl;
-    cout<<"base_folder   "<<base_folder<<endl; 
+    cout<<"base_folder   "<<base_folder<<endl;
     if (online_detect_mode)
 	ROS_WARN_STREAM("Online detect object mode !!\n");
     else
 	ROS_WARN_STREAM("Offline read object mode !!\n");
-
     //NOTE important
-    // in online mode, pred_frame_objects and init_frame_poses are not used. only first frame of truth_frame_poses is used.
+    // in online mode(true), pred_frame_objects and init_frame_poses are not used.
+    // only first frame of truth_frame_poses is used.
     
-    std::string pred_objs_txt = base_folder+"detect_cuboids_saved.txt";  // saved cuboids in local ground frame.
+    /** 读取参数文件
+     *  @param	pred_objs_txt		local ground frame中的立方体位姿.
+     *  @param	init_camera_pose	离线相机位姿 (x y yaw=0, truth roll/pitch/height).
+     *  @param	truth_camera_pose	真实的相机位姿.TODO 这两个相机位姿的区别.
+     */
+    std::string pred_objs_txt = base_folder+"detect_cuboids_saved.txt";   // saved cuboids in local ground frame.
     std::string init_camera_pose = base_folder+"pop_cam_poses_saved.txt"; // offline camera pose for cuboids detection (x y yaw=0, truth roll/pitch/height)
     std::string truth_camera_pose = base_folder+"truth_cam_poses.txt";
+    
+    /** 从各个文件中读取位姿矩阵.
+     *  @param	pred_frame_objects	读取的已知的立方体位姿.
+     *  @param	init_frame_poses	读取的已知的相机位姿.
+     *  @param	truth_frame_poses	相机真实的位姿（仅使用第一帧的信息）.
+     */
     Eigen::MatrixXd pred_frame_objects(100,10);  // 100 is some large row number, each row in txt has 10 numbers
     Eigen::MatrixXd init_frame_poses(100,8);
     Eigen::MatrixXd truth_frame_poses(100,8);
-
     if (!read_all_number_txt(pred_objs_txt,pred_frame_objects))
 	return -1;
     if (!read_all_number_txt(init_camera_pose,init_frame_poses))
 	return -1;
     if (!read_all_number_txt(truth_camera_pose,truth_frame_poses))
 	return -1;
-        
+    
+    // 输出三个文件的行数：read data size:  51  58  58.
     std::cout<<"read data size:  "<<pred_frame_objects.rows()<<"  "<<init_frame_poses.rows()<<"  "<<truth_frame_poses.rows()<<std::endl;
     
+    // 传入参数，开启建图.
     incremental_build_graph(pred_frame_objects,init_frame_poses,truth_frame_poses);    
     
     return 0;

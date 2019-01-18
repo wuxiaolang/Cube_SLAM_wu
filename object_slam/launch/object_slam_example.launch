@@ -1,14 +1,15 @@
 <!-- -->
 <launch>
+    <!-- 节点所在包名：object_slam；节点类型：object_slam_node；节点名：object_slam_node；输出信息在屏幕 -->
     <node pkg="object_slam" type="object_slam_node" name="object_slam_node" output="screen">	
     </node>
+    <!-- name属性给节点指派了名称，它将覆盖任何通过调用 ros::int来赋予节点的名称 -->
+    <!-- </node> 如果该节点有子节点，例如 remap 或者 param 元素，那么该显式结束标签是必不缺少的 -->
     
     <param name="base_folder" value="$(find object_slam)/data/" />
-    
-    <param name="online_detect_mode" value="true" />  # detect cuboid online or read offline matlab txt
+    <param name="online_detect_mode" value="ture" />  # detect cuboid online or read offline matlab txt
     <param name="save_results_to_txt" value="false" />
     
-    <!-- launch rviz -->
+    <!-- 运行object_slam.rviz -->
     <node pkg="rviz" type="rviz" name="rviz" args="-d $(find object_slam)/rviz/object_slam.rviz"/>	
-	
 </launch>

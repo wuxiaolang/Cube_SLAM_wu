@@ -27,7 +27,10 @@ public:
     int numoctaves_;
     float octaveratio_;
     
-    bool use_LSD;  // use LSD detector or edline detector    Edline usually detects longer but fewer lines. LSD detects more, but may short, broken
+    // 是否使用LSD检测线.
+    bool use_LSD;  // use LSD detector or edline detector    
+		   // Edline usually detects longer but fewer lines. LSD detects more, but may short, broken
+    // 线阈值，过低会剔除.
     float line_length_thres;
     
     /* create a pointer to a BinaryDescriptor object with deafult parameters, edline */
