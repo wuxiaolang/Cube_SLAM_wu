@@ -1,0 +1,20 @@
+{
+  "configurations": [
+    {
+      "browse": {
+        "databaseFilename": "",
+        "limitSymbolsToIncludedHeaders": true
+      },
+      "includePath": [
+        "/home/wu/catkin_object/devel/include",
+        "/opt/ros/kinetic/include",
+        "/home/wu/catkin_object/src/cube_slam/detect_3d_cuboid/include",
+        "/home/wu/catkin_object/src/cube_slam/line_lbd/include",
+        "/home/wu/catkin_object/src/cube_slam/object_slam/include",
+        "/home/wu/catkin_object/src/cube_slam/dependency/tictoc_profiler/include",
+        "/usr/include"
+      ],
+      "name": "Linux"
+    }
+  ]
+}
