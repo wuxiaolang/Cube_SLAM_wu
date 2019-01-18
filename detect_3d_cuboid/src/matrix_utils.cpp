@@ -193,9 +193,11 @@ void vert_stack_m_self(MatrixXf &a_in, const MatrixXf &b_in)
    MatrixXf combined_out(a_in.rows()+b_in.rows(),a_in.cols());
    combined_out<<a_in,
 		 b_in;
-    a_in=combined_out;//TODO why not use convervative resize?
+    a_in=combined_out; // TODO why not use convervative resize?
 }
 
+// BRIEF read_all_number_txt() 函数将txt文件中的值按行读取到 Eigen::MatrixXd 矩阵中.
+// 确保给出了矩阵的列数，行数将自动调整.
 // make sure column size is given. no checks here. row will be adjusted automatically. if more cols given, will be zero.
 template <class T>
 bool read_all_number_txt(const std::string txt_file_name, Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>& read_number_mat)

@@ -339,12 +339,11 @@ void publish_all_poses(std::vector<tracking_frame*> all_frames,std::vector<objec
     }  
 }
 
-
-//NOTE 在线检测模式不使用 pred_frame_objects 和 init_frame_poses.
+// NOTE 在线检测模式不使用 pred_frame_objects 和 init_frame_poses.
 //     truth_frame_poses 仅使用第一帧.
 void incremental_build_graph(Eigen::MatrixXd& offline_pred_frame_objects, Eigen::MatrixXd& init_frame_poses, Eigen::MatrixXd& truth_frame_poses)
 {  
-    // 读入 TUM 数据集相机内参calib.
+    // 设置 TUM 数据集相机内参calib.
     Eigen::Matrix3d calib; 
     calib<<535.4,  0,  320.1,   
 	    0,  539.2, 247.6,
@@ -603,60 +602,63 @@ void incremental_build_graph(Eigen::MatrixXd& offline_pred_frame_objects, Eigen:
     publish_all_poses(all_frames, cube_pose_opti_history,cube_pose_raw_detected_history,truth_frame_poses);      
 }
 
+// BRIEF
 int main(int argc,char* argv[])
 {
+	// STEP 【1 ：初始化参数.】
     // 初始化节点与命名空间.
     ros::init(argc, argv, "object_slam");
     ros::NodeHandle nh;
-
-    /** 初始化参数.
-     *  @param	base_folder		data文件目录：~/catkin_object/src/cube_slam/object_slam/data
-     *  @param	online_detect_mode	检测模式，默认为true，在线检测，false为使用离线相机位姿
-     *  @param	save_results_to_txt	是否保存结果，默认为false
+    /** 初始化参数. 格式：nh.param ("name", name, value);
+     *  @param	base_folder		【data文件目录】：~/catkin_object/src/cube_slam/object_slam/data
+     *  @param	online_detect_mode	【检测模式】，默认为true，【在线检测】，false为使用离线相机位姿
+     *  @param	save_results_to_txt	【是否保存结果】，默认为false
      */
-    nh.param ("/base_folder", base_folder, ros::package::getPath("object_slam")+"/data/");
-    nh.param ("/online_detect_mode", online_detect_mode, true);
-    nh.param ("/save_results_to_txt", save_results_to_txt, false);
-    
+    nh.param ("base_folder", base_folder, ros::package::getPath("object_slam")+"/data/");
+    nh.param ("online_detect_mode", online_detect_mode, true);
+    nh.param ("save_results_to_txt", save_results_to_txt, true);
     // 输出参数信息.
     cout<<""<<endl;
     cout<<"base_folder   "<<base_folder<<endl;
     if (online_detect_mode)
-	ROS_WARN_STREAM("Online detect object mode !!\n");
+		ROS_WARN_STREAM("Online detect object mode !!\n");
     else
-	ROS_WARN_STREAM("Offline read object mode !!\n");
-    //NOTE important
-    // in online mode(true), pred_frame_objects and init_frame_poses are not used.
-    // only first frame of truth_frame_poses is used.
+		ROS_WARN_STREAM("Offline read object mode !!\n");
+	if (save_results_to_txt)
+		ROS_WARN_STREAM("save results to output_cam_poses.txt !!\n");
+    else
+		ROS_WARN_STREAM("don`t save results to txt !!\n");
     
+	// STEP 【2：读取参数.】
+	// NOTE 在线模式下，不使用 pred_objs_txt 和 init_camera_pose ，仅使用 truth_camera_pose 中的第一帧
     /** 读取参数文件
      *  @param	pred_objs_txt		local ground frame中的立方体位姿.
      *  @param	init_camera_pose	离线相机位姿 (x y yaw=0, truth roll/pitch/height).
-     *  @param	truth_camera_pose	真实的相机位姿.TODO 这两个相机位姿的区别.
+     *  @param	truth_camera_pose	真实的相机位姿. TODO 这两个相机位姿的区别.
      */
     std::string pred_objs_txt = base_folder+"detect_cuboids_saved.txt";   // saved cuboids in local ground frame.
     std::string init_camera_pose = base_folder+"pop_cam_poses_saved.txt"; // offline camera pose for cuboids detection (x y yaw=0, truth roll/pitch/height)
     std::string truth_camera_pose = base_folder+"truth_cam_poses.txt";
     
-    /** 从各个文件中读取位姿矩阵.
+	/** 从各个文件中读取位姿矩阵.
      *  @param	pred_frame_objects	读取的已知的立方体位姿.
      *  @param	init_frame_poses	读取的已知的相机位姿.
-     *  @param	truth_frame_poses	相机真实的位姿（仅使用第一帧的信息）.
+     *  @param	truth_frame_poses	相机真实的位姿（仅使用第一帧的信息） NOTE .
      */
     Eigen::MatrixXd pred_frame_objects(100,10);  // 100 is some large row number, each row in txt has 10 numbers
-    Eigen::MatrixXd init_frame_poses(100,8);
+    Eigen::MatrixXd init_frame_poses(100,8);	 // NOTE 需要给定列数，行数会自动读取！！
     Eigen::MatrixXd truth_frame_poses(100,8);
     if (!read_all_number_txt(pred_objs_txt,pred_frame_objects))
-	return -1;
+		return -1;
     if (!read_all_number_txt(init_camera_pose,init_frame_poses))
-	return -1;
+		return -1;
     if (!read_all_number_txt(truth_camera_pose,truth_frame_poses))
-	return -1;
-    
+		return -1;
+	std::cout << truth_frame_poses << std::endl;
     // 输出三个文件的行数：read data size:  51  58  58.
     std::cout<<"read data size:  "<<pred_frame_objects.rows()<<"  "<<init_frame_poses.rows()<<"  "<<truth_frame_poses.rows()<<std::endl;
     
-    // 传入参数，开启建图.
+    // STEP 【3：传入参数开始建图.】
     incremental_build_graph(pred_frame_objects,init_frame_poses,truth_frame_poses);    
     
     return 0;
