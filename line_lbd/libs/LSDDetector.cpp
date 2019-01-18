@@ -149,6 +149,7 @@ void LSDDetector::detect( const std::vector<Mat>& images, std::vector<std::vecto
   }
 }
 
+// NOTE 线检测功能的实现.
 /* implementation of line detection */
 void LSDDetector::detectImpl( const Mat& imageSrc, std::vector<KeyLine>& keylines, std::vector<std::vector<KeyLine>>& keyline_octaves,
 			      int numOctaves, int scale, const LSDOptions& opts, const Mat& mask ) const

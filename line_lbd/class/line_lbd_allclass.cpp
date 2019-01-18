@@ -126,9 +126,11 @@ line_lbd_detect::line_lbd_detect(int numoctaves,float octaveratio): numoctaves_(
     line_length_thres=50;
 }
 
+// 线检测函数.
 void line_lbd_detect::detect_raw_lines(const cv::Mat& gray_img, std::vector< KeyLine>& keylines_out)
 {
-   if (use_LSD){
+   if (use_LSD)
+   {
       LSDDetector::LSDOptions opts;   // lsd parameters  see Stvo-PL  I actually didn't use it.
       opts.refine       = 0;      opts.scale        = 0;
       opts.sigma_scale  = 0;      opts.quant        = 0;
@@ -137,8 +139,8 @@ void line_lbd_detect::detect_raw_lines(const cv::Mat& gray_img, std::vector< Key
       opts.min_length   = 0;   
           
       lsd->detect( gray_img, keylines_out, octaveratio_, numoctaves_,opts);  // seems different from my LSD.  already removed boundary lines
-//       std::cout<<"lsd edge size "<<keylines_out.size()<<std::endl;
-  }
+       std::cout<<"lsd edge size "<<keylines_out.size()<<std::endl;
+    }
   else 
   {
       cv::Mat mask1 = Mat::ones( gray_img.size(), CV_8UC1 );  
@@ -217,7 +219,7 @@ void line_lbd_detect::detect_filter_lines(const cv::Mat& gray_img, cv::Mat& line
 {
     std::vector< KeyLine> keylines;
     detect_filter_lines(gray_img,keylines);
-    keylines_to_mat(keylines,linesmat_out,1);
+    keylines_to_mat(keylines,linesmat_out,1);       // 将 vector< KeyLine> 格式转换成 cv::mat 格式.
 }
 
 

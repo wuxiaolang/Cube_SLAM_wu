@@ -16,6 +16,7 @@
 
 #include "detect_3d_cuboid/matrix_utils.h"
 
+// BRIEF matlab cuboid struct
 class cuboid // matlab cuboid struct. cuboid on ground. only has yaw, no obj roll/pitch
 {
 public:  
@@ -81,7 +82,7 @@ public:
       ///@param   whether_plot_final_images	是否显示原始图+边框.
       bool whether_plot_final_images = false;	// 显示检测结果图.
       bool whether_save_final_images = false; 	// 保存检测结果图.
-      cv::Mat cuboids_2d_img;                   // 保存为 opencv 格式的 cuboids_2d_img.
+      cv::Mat cuboids_2d_img;                   // 带有立方体提案的2D图像. opencv 格式.
 
       bool print_details = false;
       /** @param  print_details		是否输出检测的细节信息.

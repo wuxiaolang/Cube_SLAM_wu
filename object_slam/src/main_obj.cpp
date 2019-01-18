@@ -387,7 +387,7 @@ void incremental_build_graph(Eigen::MatrixXd& offline_pred_frame_objects, Eigen:
     
     // only first truth pose is used. to directly visually compare with truth pose. also provide good roll/pitch
     // 这里仅使用了第一帧的相机真实位姿，为了直接与真实位姿对比，也提供良好的 roll/pitch 角.
-	// 构造一个四元数形式的 fixed_init_cam_pose_Twc.
+	// 构造一个四元数形式的 fixed_init_cam_pose_Twc 读取第一帧的位姿.
     g2o::SE3Quat fixed_init_cam_pose_Twc(truth_frame_poses.row(0).tail<7>());
     
     // 保存每帧的优化结果.
@@ -398,91 +398,130 @@ void incremental_build_graph(Eigen::MatrixXd& offline_pred_frame_objects, Eigen:
 
     int offline_cube_obs_row_id = 0;
     
+	// @PARAM all_frames 存储每一帧的信息.
     std::vector<tracking_frame*> all_frames(total_frame_number);    // 一个 tracking_frame 向量.
     g2o::VertexCuboid* vCube;		// TODO 这个顶点将物体的位姿存储到世界.
     
-    // process each frame online and incrementally
-    for (int frame_index=0;frame_index<total_frame_number;frame_index++)
-    {
-	  g2o::SE3Quat curr_cam_pose_Twc;
-	  g2o::SE3Quat odom_val; // from previous frame to current frame
-	  
-	  if (frame_index==0)
-		curr_cam_pose_Twc = fixed_init_cam_pose_Twc;
-	  else
-	  {
-		g2o::SE3Quat prev_pose_Tcw = all_frames[frame_index-1]->cam_pose_Tcw;
-		if (frame_index>1)  // from third frame, use constant motion model to initialize camera.
+    // 在线逐帧处理每一帧图像.
+    for (int frame_index=0; frame_index<total_frame_number; frame_index++)
+    { 
+		// @PARAM 李代数位姿表示.
+		g2o::SE3Quat curr_cam_pose_Twc;		// 当前帧的位姿.
+		g2o::SE3Quat odom_val; 				// 从上一帧到当前帧的旋转.
+		
+		// STEP 1. 计算每一帧的位姿.
+		if (frame_index==0)
+			curr_cam_pose_Twc = fixed_init_cam_pose_Twc;		// 读取第一帧的真实位姿.
+		else
 		{
-		    g2o::SE3Quat prev_prev_pose_Tcw = all_frames[frame_index-2]->cam_pose_Tcw;
-		    odom_val = prev_pose_Tcw*prev_prev_pose_Tcw.inverse();
+			// @PARAM 上一帧的位姿：all_frames[frame_index-1] 的 Tcw.
+			g2o::SE3Quat prev_pose_Tcw = all_frames[frame_index-1]->cam_pose_Tcw;
+			// 从第三帧开始，使用恒定运动模型来初始化相机.
+			// TODO 第 0 帧来自于真实位姿，第 2 帧通过里程计计算出来，第 1 帧呢？？
+			if (frame_index > 1)  // from third frame, use constant motion model to initialize camera.
+			{
+				// 上上一帧的位姿 prev_prev_pose_Tcw.
+				g2o::SE3Quat prev_prev_pose_Tcw = all_frames[frame_index-2]->cam_pose_Tcw;
+				// 从上一帧到本帧的变换 
+				odom_val = prev_pose_Tcw*prev_prev_pose_Tcw.inverse();
+			}
+			// NOTE 计算当前帧的位姿（相机->相机） CT_wc =(T_odom)^-1
+			curr_cam_pose_Twc = (odom_val*prev_pose_Tcw).inverse();
 		}
-		curr_cam_pose_Twc = (odom_val*prev_pose_Tcw).inverse();
-	  }
-            
 	  
+	  // STEP 2. 信息存储.
+	  // 将当前帧 currframe 的信息存放在 all_frames 序列中.
 	  tracking_frame* currframe = new tracking_frame();
 	  currframe->frame_seq_id = frame_index;
 	  all_frames[frame_index] = currframe;
-
 	  
 	  bool has_detected_cuboid = false;
-	  g2o::cuboid cube_local_meas; double proposal_error;
-	  char frame_index_c[256];	sprintf(frame_index_c,"%04d",frame_index);  // format into 4 digit
-	  
+	  // @PARAM 定义一个立方体类的对象 cube_local_meas
+	  g2o::cuboid cube_local_meas; 
+	  double proposal_error;
+	  char frame_index_c[256];	
+	  // 将当前帧的编号写入到 frame_index_c 中. TODO 这里又将frame_index写入到frame_index_c做什么？仅仅格式化位4位数？
+	  sprintf(frame_index_c,"%04d",frame_index);  // 格式化为4位.
+
 	  // read or detect cuboid
+	  // STEP 3. 读取（离线）或【检测（在线）立方体物体】.
 	  if (online_detect_mode)
 	  {
-	      //start detect cuboid
+	      // STEP 3.1 开始检测，读取rgb图像到 raw_rgb_img.
 	      cv::Mat raw_rgb_img = cv::imread(base_folder+"raw_imgs/"+frame_index_c+"_rgb_raw.jpg", 1);
 	    
-	      //edge detection
+	      // STEP 3.2 边缘线检测.
+		  // @PARAM all_lines_raw 边缘线存储的矩阵.
 	      cv::Mat all_lines_mat;
 	      line_lbd_obj.detect_filter_lines(raw_rgb_img, all_lines_mat);
 	      Eigen::MatrixXd all_lines_raw(all_lines_mat.rows,4);
 	      for (int rr=0;rr<all_lines_mat.rows;rr++)
-		for (int cc=0;cc<4;cc++)
+				for (int cc=0;cc<4;cc++)
 		  all_lines_raw(rr,cc) = all_lines_mat.at<float>(rr,cc);
 	      
-	      
+		  // STEP 3.3 读取 yolo 2D 目标检测.
 	      //read cleaned yolo 2d object detection
-	      Eigen::MatrixXd raw_2d_objs(10,5);  // 2d rect [x1 y1 width height], and prob
+	      Eigen::MatrixXd raw_2d_objs(10,5);  // 每帧 5 个参数：2D检测框[x1 y1 width height], 和概率.
 	      if (!read_all_number_txt(base_folder+"/filter_2d_obj_txts/"+frame_index_c+"_yolo2_0.15.txt", raw_2d_objs))
-		  return;
-	      raw_2d_objs.leftCols<2>().array() -=1;   // change matlab coordinate to c++, minus 1
+		  		return;
+		//   else 
+		//   		std::cout << "yolo:" << "\n" << raw_2d_objs << std::endl;
+	      raw_2d_objs.leftCols<2>().array() -=1;   // 将matlab的坐标换成c++，减1；change matlab coordinate to c++, minus 1
 	      
+		  // STEP 3.4 将当前帧的李代数表示的位姿转换成Eigen的变换矩阵.
 	      Matrix4d transToWolrd;
-	      detect_cuboid_obj.whether_sample_cam_roll_pitch = (frame_index!=0); // first frame doesn't need to sample cam pose. could also sample. doesn't matter much
+	      detect_cuboid_obj.whether_sample_cam_roll_pitch = (frame_index!=0); // 第一帧可以不用采样相机位姿，也可以采样，不重要；first frame doesn't need to sample cam pose. could also sample. doesn't matter much
 	      if (detect_cuboid_obj.whether_sample_cam_roll_pitch) //sample around first frame's pose
-		  transToWolrd = fixed_init_cam_pose_Twc.to_homogeneous_matrix();
+		  		transToWolrd = fixed_init_cam_pose_Twc.to_homogeneous_matrix();		// 将李代数表示的变换转换成Eigen矩阵表示transToWolrd.
 	      else
 		  transToWolrd = curr_cam_pose_Twc.to_homogeneous_matrix();
 	      
-	      std::vector<ObjectSet> frames_cuboids; // each 2d bbox generates an ObjectSet, which is vector of sorted proposals
+		  // STEP 3.5 立方体检测
+	      std::vector<ObjectSet> frames_cuboids; // 立方体提案的排序向量. ObjectSet 是一个matlab的立方体对象.
+		  // NOTE detect_cuboid()函数检测立方体.
 	      detect_cuboid_obj.detect_cuboid(raw_rgb_img,transToWolrd,raw_2d_objs,all_lines_raw, frames_cuboids);
-	      currframe->cuboids_2d_img = detect_cuboid_obj.cuboids_2d_img;
-	      
-	      has_detected_cuboid = frames_cuboids.size()>0 && frames_cuboids[0].size()>0;
+	      // cuboids_2d_img：带有立方体提案的 2D 图像.
+		  currframe->cuboids_2d_img = detect_cuboid_obj.cuboids_2d_img;
+		  //   cv::imshow("detect_cuboid_obj.cuboids_2d_img",detect_cuboid_obj.cuboids_2d_img);
+		  //   cv::waitKey(0);
+
+		  // STEP 3.6 检测到了物体，准备物体测量.
+	      has_detected_cuboid = frames_cuboids.size()>0 && frames_cuboids[0].size()>0;		// frames_cuboids[0] 第0个对象.
 	      if (has_detected_cuboid)  // prepare object measurement
 	      {
-		  cuboid* detected_cube = frames_cuboids[0][0];  // NOTE this is a simple dataset, only one landmark
+			  	// 第 0 个物体的第 0 个提案.
+				cuboid* detected_cube = frames_cuboids[0][0];  // NOTE this is a simple dataset, only one landmark
 
-		  g2o::cuboid cube_ground_value; //cuboid in the local ground frame.
-		  Vector9d cube_pose;cube_pose<<detected_cube->pos(0),detected_cube->pos(1),detected_cube->pos(2),
-			  0,0,detected_cube->rotY,detected_cube->scale(0),detected_cube->scale(1),detected_cube->scale(2);  // xyz roll pitch yaw scale
-		  cube_ground_value.fromMinimalVector(cube_pose);
-		  cube_local_meas = cube_ground_value.transform_to(curr_cam_pose_Twc); // measurement is in local camera frame
+				g2o::cuboid cube_ground_value; // local ground frame 中的立方体对象.
+				// 立方体 9 自由度的位姿.
+				Vector9d cube_pose;
+				cube_pose  << 	detected_cube->pos(0),
+								detected_cube->pos(1),
+								detected_cube->pos(2),
+								0,
+								0,
+								detected_cube->rotY,
+								detected_cube->scale(0),
+								detected_cube->scale(1),
+								detected_cube->scale(2);  // xyz roll pitch yaw scale
 
-		  if (detect_cuboid_obj.whether_sample_cam_roll_pitch)  //if camera roll/pitch is sampled, transform to the correct camera frame.
-		  {
-		      Vector3d new_camera_eulers =  detect_cuboid_obj.cam_pose_raw.euler_angle;
-		      new_camera_eulers(0) += detected_cube->camera_roll_delta; new_camera_eulers(1) += detected_cube->camera_pitch_delta;
-		      Matrix3d rotation_new = euler_zyx_to_rot<double>(new_camera_eulers(0),new_camera_eulers(1),new_camera_eulers(2));
-		      Vector3d trans = transToWolrd.col(3).head<3>();
-		      g2o::SE3Quat curr_cam_pose_Twc_new(rotation_new,trans);
-		      cube_local_meas = cube_ground_value.transform_to(curr_cam_pose_Twc_new);
-		  }
-		  proposal_error = detected_cube->normalized_error;
+				// 转换到相机坐标系下的测量.
+				cube_ground_value.fromMinimalVector(cube_pose);
+				cube_local_meas = cube_ground_value.transform_to(curr_cam_pose_Twc); // measurement is in local camera frame
+
+				// 如果对roll/pitch采样，则将其转换到正确的相机帧.
+				if (detect_cuboid_obj.whether_sample_cam_roll_pitch)  //if camera roll/pitch is sampled, transform to the correct camera frame.
+				{
+					Vector3d new_camera_eulers =  detect_cuboid_obj.cam_pose_raw.euler_angle;
+					new_camera_eulers(0) += detected_cube->camera_roll_delta; new_camera_eulers(1) += detected_cube->camera_pitch_delta;
+					Matrix3d rotation_new = euler_zyx_to_rot<double>(new_camera_eulers(0),new_camera_eulers(1),new_camera_eulers(2));
+					Vector3d trans = transToWolrd.col(3).head<3>();
+					g2o::SE3Quat curr_cam_pose_Twc_new(rotation_new,trans);
+					cube_local_meas = cube_ground_value.transform_to(curr_cam_pose_Twc_new);
+				}
+				
+				// NOTE 提案的误差
+				proposal_error = detected_cube->normalized_error;
 	      }
 	  }
 	  else

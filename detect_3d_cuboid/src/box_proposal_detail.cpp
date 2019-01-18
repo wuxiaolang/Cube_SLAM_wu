@@ -54,7 +54,7 @@ void detect_3d_cuboid::set_cam_pose(const Matrix4d& transToWolrd)
       //TODO relative measure? not good... then need to change transToWolrd.
 }
 
-
+// NOTE 立方体检测函数.
 void detect_3d_cuboid::detect_cuboid(const cv::Mat& rgb_img, const Matrix4d& transToWolrd, const MatrixXd& obj_bbox_coors,
 				     MatrixXd all_lines_raw, std::vector<ObjectSet>& all_object_cuboids)
 {

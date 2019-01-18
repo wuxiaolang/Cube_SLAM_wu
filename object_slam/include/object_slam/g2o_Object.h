@@ -18,11 +18,13 @@ typedef Eigen::Matrix<double, 6, 1> Vector6d;
 typedef Eigen::Matrix<double, 6, 6> Matrix6d;
 
 namespace g2o {
-  
-class cuboid{
+
+// BRIEF 立方体类cuboid
+class cuboid
+{
   public:
-      SE3Quat pose;  // 6 dof for object, object to world by default
-      Vector3d scale; // [length, width, height]  half!
+      SE3Quat pose;  	// 6 自由度的位姿 6 dof for object, object to world by default
+      Vector3d scale; 	// 3 自由度的尺度 [length, width, height]  half!
 
       cuboid()
       {
@@ -31,10 +33,12 @@ class cuboid{
       }
       
        // xyz roll pitch yaw half_scale 
-      inline void fromMinimalVector(const Vector9d& v){ 
-	  Eigen::Quaterniond posequat = zyx_euler_to_quat(v(3),v(4),v(5));
-	  pose = SE3Quat(posequat, v.head<3>());
-	  scale = v.tail<3>();
+	   // 分别记录下 9 个自由度位姿参数.
+      inline void fromMinimalVector(const Vector9d& v)
+	  { 
+			Eigen::Quaterniond posequat = zyx_euler_to_quat(v(3),v(4),v(5));
+			pose = SE3Quat(posequat, v.head<3>());
+			scale = v.tail<3>();
       }
       
       // xyz quaternion, half_scale
@@ -118,11 +122,13 @@ class cuboid{
       }
       
       // transform a global cuboid to local cuboid  Twc is camera pose. from camera to world
-      cuboid transform_to(const SE3Quat& Twc) const{
-	  cuboid res;
-	  res.pose = Twc.inverse()*this->pose;
-	  res.scale = this->scale;
-	  return res;
+	  // 将一个全局立方体转换为局部立方体,Twc是相机姿势,从相机到世界.
+      cuboid transform_to(const SE3Quat& Twc) const
+	  {
+			cuboid res;
+			res.pose = Twc.inverse()*this->pose;
+			res.scale = this->scale;
+			return res;
       } 
       
       // xyz roll pitch yaw half_scale
