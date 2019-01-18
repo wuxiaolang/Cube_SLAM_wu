@@ -4,6 +4,8 @@
 
 #include <object_slam/g2o_Object.h>
 
+// BRIEF 物体路标类
+// 包含有立方体提案的值？
 class object_landmark{
 public:
   

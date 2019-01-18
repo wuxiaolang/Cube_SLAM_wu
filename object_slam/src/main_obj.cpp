@@ -343,43 +343,42 @@ void publish_all_poses(std::vector<tracking_frame*> all_frames,std::vector<objec
 //     truth_frame_poses 仅使用第一帧.
 void incremental_build_graph(Eigen::MatrixXd& offline_pred_frame_objects, Eigen::MatrixXd& init_frame_poses, Eigen::MatrixXd& truth_frame_poses)
 {  
+	// STEP 【1. 变量定义】
     // 设置 TUM 数据集相机内参calib.
     Eigen::Matrix3d calib; 
     calib<<535.4,  0,  320.1,   
 	    0,  539.2, 247.6,
-	    0,      0,     1;    
-    
-    // 帧数，从truth_frame_poses中获取.
+	    0,      0,     1;   
+
+    // 帧数，也即truth_frame_poses中的列数.
     int total_frame_number = truth_frame_poses.rows();
 
-    // 检测所有帧中的立方体，定义为一个detect_3d_cuboid类的detect_cuboid_obj对象.
+	// STEP 【1.2 定义立方体检测对象】
+    // 检测所有帧中的立方体，定义为一个【detect_3d_cuboid】类的detect_cuboid_obj对象.
     detect_3d_cuboid detect_cuboid_obj;
     detect_cuboid_obj.whether_plot_detail_images = false;	// 不绘制检测细节图像.
     detect_cuboid_obj.whether_plot_final_images = false;	// 不绘制检测结果图.
-    detect_cuboid_obj.print_details = false;  			// 不输出检测细节.
-    detect_cuboid_obj.set_calibration(calib);			// 设置内参.
+    detect_cuboid_obj.print_details = false;  				// 不输出检测细节.
+    detect_cuboid_obj.set_calibration(calib);				// 设置内参.
     detect_cuboid_obj.whether_sample_bbox_height = false;	// TODO
-    detect_cuboid_obj.nominal_skew_ratio = 2;			// TODO
+    detect_cuboid_obj.nominal_skew_ratio = 2;				// TODO
     detect_cuboid_obj.whether_save_final_images = true;		// 保存检测结果图.
-    
-    // 定义线检测line_lbd_detect类的line_lbd_obj对象.
+	// STEP 【1.3 定义线检测对象】
+    // 定义线检测【line_lbd_detect】类的line_lbd_obj对象.
     line_lbd_detect line_lbd_obj;
     line_lbd_obj.use_LSD = false;		// 使用 LSD 或 detector 线检测.
     line_lbd_obj.line_length_thres = 15;  	// 去除较短的边线.
     
-    //NOTE G2O图优化 graph optimization.
-    //in this example, there is only one object!!! perfect association
-    //【STEP1】 构造一个名为 graph 的求解器.
+    // STEP 【2.G2O图优化 graph optimization】
+    //in this example, there is only one object!!! perfect association  假设只有一个对象！！！  TODO
+    // STEP 【2.1 构造一个名为 graph 的求解器】
     g2o::SparseOptimizer graph;
-    
-    //【STEP2】 使用Cholmod中的线性方程求解器得到 linearSolver
+    // STEP 【2.2 使用Cholmod中的线性方程求解器得到 linearSolver】
     g2o::BlockSolverX::LinearSolverType* linearSolver;
     linearSolver = new g2o::LinearSolverDense<g2o::BlockSolverX::PoseMatrixType>();
-    
-    //【STEP3】 再用稀疏矩阵块求解器 solver_ptr
+    // STEP 【2.3 再用稀疏矩阵块求解器 solver_ptr】
     g2o::BlockSolverX * solver_ptr = new g2o::BlockSolverX(linearSolver);
-    
-    //【STEP4】 使用梯度下降算法求解上面的 solver_ptr 得到 solver
+    // STEP 【2.4使用梯度下降算法求解上面的 solver_ptr 得到 solver】
     g2o::OptimizationAlgorithmLevenberg* solver = new g2o::OptimizationAlgorithmLevenberg(solver_ptr);
     
     graph.setAlgorithm(solver);		// 设置求解器.    
@@ -387,17 +386,20 @@ void incremental_build_graph(Eigen::MatrixXd& offline_pred_frame_objects, Eigen:
 
     
     // only first truth pose is used. to directly visually compare with truth pose. also provide good roll/pitch
-    // 
+    // 这里仅使用了第一帧的相机真实位姿，为了直接与真实位姿对比，也提供良好的 roll/pitch 角.
+	// 构造一个四元数形式的 fixed_init_cam_pose_Twc.
     g2o::SE3Quat fixed_init_cam_pose_Twc(truth_frame_poses.row(0).tail<7>());
     
-    // save optimization results of each frame
+    // 保存每帧的优化结果.
+	// 每帧优化后的路标的位姿.
     std::vector<object_landmark*> cube_pose_opti_history(total_frame_number, nullptr);  //landmark pose after each frame's optimization
-    std::vector<object_landmark*> cube_pose_raw_detected_history(total_frame_number, nullptr); //raw detected cuboid frame each frame. before optimization
+    // 优化之前每帧检测到的立方体帧.
+	std::vector<object_landmark*> cube_pose_raw_detected_history(total_frame_number, nullptr); //raw detected cuboid frame each frame. before optimization
 
     int offline_cube_obs_row_id = 0;
     
-    std::vector<tracking_frame*> all_frames(total_frame_number);    
-    g2o::VertexCuboid* vCube;
+    std::vector<tracking_frame*> all_frames(total_frame_number);    // 一个 tracking_frame 向量.
+    g2o::VertexCuboid* vCube;		// TODO 这个顶点将物体的位姿存储到世界.
     
     // process each frame online and incrementally
     for (int frame_index=0;frame_index<total_frame_number;frame_index++)
@@ -654,7 +656,7 @@ int main(int argc,char* argv[])
 		return -1;
     if (!read_all_number_txt(truth_camera_pose,truth_frame_poses))
 		return -1;
-	std::cout << truth_frame_poses << std::endl;
+	//std::cout << truth_frame_poses << std::endl;
     // 输出三个文件的行数：read data size:  51  58  58.
     std::cout<<"read data size:  "<<pred_frame_objects.rows()<<"  "<<init_frame_poses.rows()<<"  "<<truth_frame_poses.rows()<<std::endl;
     
