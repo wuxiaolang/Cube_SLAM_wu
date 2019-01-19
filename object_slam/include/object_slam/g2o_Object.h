@@ -25,11 +25,11 @@ class cuboid
   public:
       SE3Quat pose;  	// 6 自由度的位姿 6 dof for object, object to world by default
       Vector3d scale; 	// 3 自由度的尺度 [length, width, height]  half!
-
+	
       cuboid()
       {
-	  pose = SE3Quat();
-	  scale.setZero();
+		pose = SE3Quat();
+		scale.setZero();
       }
       
        // xyz roll pitch yaw half_scale 

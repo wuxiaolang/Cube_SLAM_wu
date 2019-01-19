@@ -5,12 +5,11 @@
 #include <object_slam/g2o_Object.h>
 
 // BRIEF 物体路标类
-// 包含有立方体提案的值？
+// 包含有立方体的信息.
 class object_landmark{
 public:
   
-    g2o::cuboid cube_meas;  //cube_value
+    g2o::cuboid cube_meas;  //立方体路标的 9 自由度信息.
     g2o::VertexCuboid* cube_vertex;
-    double meas_quality;  // [0,1] the higher, the better    
-    
+    double meas_quality;    // 评估提案测量的质量 [0,1] the higher, the better    
 };

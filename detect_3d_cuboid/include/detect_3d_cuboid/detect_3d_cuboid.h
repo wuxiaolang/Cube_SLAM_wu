@@ -31,7 +31,7 @@ public:
     Eigen::Vector4d rect_detect_2d; //% 2D bounding box (might be expanded by me)
     double edge_distance_error;
     double edge_angle_error;
-    double normalized_error;  // normalized distance+angle
+    double normalized_error;  // normalized distance+angle NOTE 
     double skew_ratio;
     double down_expand_height;
     double camera_roll_delta;

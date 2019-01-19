@@ -461,7 +461,7 @@ void incremental_build_graph(Eigen::MatrixXd& offline_pred_frame_objects, Eigen:
 	      
 		  // STEP 3.3 读取 yolo 2D 目标检测.
 	      //read cleaned yolo 2d object detection
-	      Eigen::MatrixXd raw_2d_objs(10,5);  // 每帧 5 个参数：2D检测框[x1 y1 width height], 和概率.
+	      Eigen::MatrixXd raw_2d_objs(10,5);  // 每帧 5 个参数：2D检测框[x1 y1 width height], 和概率. TODO 
 	      if (!read_all_number_txt(base_folder+"/filter_2d_obj_txts/"+frame_index_c+"_yolo2_0.15.txt", raw_2d_objs))
 		  		return;
 		//   else 
@@ -482,8 +482,8 @@ void incremental_build_graph(Eigen::MatrixXd& offline_pred_frame_objects, Eigen:
 	      detect_cuboid_obj.detect_cuboid(raw_rgb_img,transToWolrd,raw_2d_objs,all_lines_raw, frames_cuboids);
 	      // cuboids_2d_img：带有立方体提案的 2D 图像.
 		  currframe->cuboids_2d_img = detect_cuboid_obj.cuboids_2d_img;
-		  //   cv::imshow("detect_cuboid_obj.cuboids_2d_img",detect_cuboid_obj.cuboids_2d_img);
-		  //   cv::waitKey(0);
+		    cv::imshow("currframe.cuboids_2d_img",currframe->cuboids_2d_img);
+		    cv::waitKey(0);
 
 		  // STEP 3.6 检测到了物体，准备物体测量.
 	      has_detected_cuboid = frames_cuboids.size()>0 && frames_cuboids[0].size()>0;		// frames_cuboids[0] 第0个对象.
@@ -524,75 +524,108 @@ void incremental_build_graph(Eigen::MatrixXd& offline_pred_frame_objects, Eigen:
 				proposal_error = detected_cube->normalized_error;
 	      }
 	  }
+	  // 离线模式.
 	  else
 	  {
-	      int cube_obs_frame_id = offline_pred_frame_objects(offline_cube_obs_row_id,0);
-	      has_detected_cuboid = cube_obs_frame_id==frame_index;
+		  // @PARAM 离线已知的立方体位姿矩阵 offline_pred_frame_objects
+		  // NOTE 读取 detect_cuboids_saved.txt 中的立方体的位姿.
+	      int cube_obs_frame_id = offline_pred_frame_objects(offline_cube_obs_row_id,0);	// 读取第一列编号.
+	      has_detected_cuboid = cube_obs_frame_id==frame_index;		// 每一帧都检测到了.
 	      if (has_detected_cuboid)  // prepare object measurement   not all frame has observation!!
 	      {
-		  VectorXd measure_data = offline_pred_frame_objects.row(offline_cube_obs_row_id);
-		  g2o::cuboid cube_ground_value; 
-		  Vector9d cube_pose;cube_pose<<measure_data(1),measure_data(2),measure_data(3),0,0,measure_data(4),
-						measure_data(5),measure_data(6),measure_data(7);  // xyz roll pitch yaw scale
-		  cube_ground_value.fromMinimalVector(cube_pose);
-		  Eigen::VectorXd cam_pose_vec = init_frame_poses.row(frame_index);
-		  g2o::SE3Quat cam_val_Twc(cam_pose_vec.segment<7>(1)); // time x y z qx qy qz qw
-		  cube_local_meas = cube_ground_value.transform_to(cam_val_Twc); // measurement is in local camera frame
-		  proposal_error = measure_data(8);
-		  
-		  // read offline saved 2d image
-		  std::string detected_cube_2d_img_name = base_folder+"pred_3d_obj_overview/" + std::string(frame_index_c) + "_best_objects.jpg";
-		  currframe->cuboids_2d_img = cv::imread(detected_cube_2d_img_name, 1);
-		  
-		  offline_cube_obs_row_id++; // switch to next row  NOTE at most one object one frame in this data
+			    // 读取立方体的 9 自由度的位姿.
+				VectorXd measure_data = offline_pred_frame_objects.row(offline_cube_obs_row_id);
+				g2o::cuboid cube_ground_value; 
+				Vector9d cube_pose;
+				cube_pose<< measure_data(1),
+							measure_data(2),
+							measure_data(3),
+							0,
+							0,
+							measure_data(4),
+							measure_data(5),
+							measure_data(6),
+							measure_data(7);  // xyz roll pitch yaw scale
+				
+				// 将 9 自由度的位姿转换成 g2o::cuboid 中的形式.（世界坐标系）
+				cube_ground_value.fromMinimalVector(cube_pose);
+
+				// 读取每一帧相机的位姿.
+				Eigen::VectorXd cam_pose_vec = init_frame_poses.row(frame_index);
+				g2o::SE3Quat cam_val_Twc(cam_pose_vec.segment<7>(1)); // time x y z qx qy qz qw
+				// NOTE 将立方体的位姿转换到相机坐标系
+				cube_local_meas = cube_ground_value.transform_to(cam_val_Twc); // measurement is in local camera frame
+				
+				// NOTE 立方体提案的误差.
+				proposal_error = measure_data(8);
+				
+				// 读取离线保存的带有提案的 2D 图像，并保存到 currframe->cuboids_2d_img 中.
+				std::string detected_cube_2d_img_name = base_folder+"pred_3d_obj_overview/" + std::string(frame_index_c) + "_best_objects.jpg";
+				currframe->cuboids_2d_img = cv::imread(detected_cube_2d_img_name, 1);
+				
+				offline_cube_obs_row_id++; // switch to next row  NOTE at most one object one frame in this data
 	      }
 	  }
 	  
+	  // STEP 4 立方体路标.
 	  if (has_detected_cuboid)
 	  {
+		  // @PARAM 创建立方体路标.
 	      object_landmark* localcuboid = new object_landmark();
 	      
+		  // 读取立方体的位姿，评估质量.
 	      localcuboid->cube_meas = cube_local_meas;
 	      localcuboid->meas_quality = (1-proposal_error+0.5)/2;  // initial error 0-1, higher worse,  now change to [0.5,1] higher, better
-	      currframe->observed_cuboids.push_back(localcuboid);
+	    //   std::cout << "proposal_error:  " << proposal_error <<std::endl;
+		//   std::cout << "meas_quality:  " << localcuboid->meas_quality <<std::endl;
+		  currframe->observed_cuboids.push_back(localcuboid);
 	  }
 	  
-	  
+	  // STEP 5 G2O 优化.
+	  // STEP 5.1 设置 g2o 中的立方体顶点，本数据集中只有一个.
 	  // set up g2o cube vertex. only one in this dataset
-	  if (frame_index==0)
+	  if (frame_index == 0)
 	  {
+		  // cuboid的初始位姿（世界坐标系）.
 	      g2o::cuboid init_cuboid_global_pose = cube_local_meas.transform_from(curr_cam_pose_Twc);
 	      vCube = new g2o::VertexCuboid();
 	      vCube->setEstimate(init_cuboid_global_pose);
 	      vCube->setId(0);
 	      vCube->setFixed(false);
-	      graph.addVertex(vCube);
+	      graph.addVertex(vCube);			// NOTE 添加顶点（立方体）
 	  }
 	  
-	  
+	  // STEP 5.2 设置相机的顶点.
 	  // set up g2o camera vertex
 	  g2o::VertexSE3Expmap * vSE3 = new g2o::VertexSE3Expmap();
 	  currframe->pose_vertex = vSE3;
 	  vSE3->setId(frame_index+1);
-	  graph.addVertex(vSE3);
-	  
+	  graph.addVertex(vSE3);				// NOTE 添加顶点（相机）
+	  // G2O 一般将顶点存储为从世界到相机的位姿.
 	  vSE3->setEstimate(curr_cam_pose_Twc.inverse()); //g2o vertex usually stores world to camera pose.
-	  vSE3->setFixed(frame_index==0);
+	  vSE3->setFixed(frame_index==0);		
 	  
+	  // STEP 5.3 优化边.
+	  // 添加 G2O的边：相机-物体测量.
 	  // add g2o camera-object measurement edges, if there is
 	  if (currframe->observed_cuboids.size()>0)
 	  {
-		object_landmark* cube_landmark_meas = all_frames[frame_index]->observed_cuboids[0];
-		g2o::EdgeSE3Cuboid* e = new g2o::EdgeSE3Cuboid();
-		e->setVertex(0, dynamic_cast<g2o::OptimizableGraph::Vertex*>( vSE3 ));
-		e->setVertex(1, dynamic_cast<g2o::OptimizableGraph::Vertex*>( vCube ));
-		e->setMeasurement(cube_landmark_meas->cube_meas);
-		e->setId(frame_index);
-		Vector9d inv_sigma;inv_sigma<<1,1,1,1,1,1,1,1,1;
-		inv_sigma = inv_sigma*2.0*cube_landmark_meas->meas_quality;
-		Matrix9d info = inv_sigma.cwiseProduct(inv_sigma).asDiagonal();
-		e->setInformation(info);
-		graph.addEdge(e);
+			object_landmark* cube_landmark_meas = all_frames[frame_index]->observed_cuboids[0];
+
+			g2o::EdgeSE3Cuboid* e = new g2o::EdgeSE3Cuboid();
+			e->setVertex(0, dynamic_cast<g2o::OptimizableGraph::Vertex*>( vSE3 ));
+			e->setVertex(1, dynamic_cast<g2o::OptimizableGraph::Vertex*>( vCube ));
+			e->setMeasurement(cube_landmark_meas->cube_meas);
+			e->setId(frame_index);
+
+			// TODO inv_sigma 和 info 是啥？
+			Vector9d inv_sigma;
+			inv_sigma << 1,1,1,1,1,1,1,1,1;
+			inv_sigma = inv_sigma * 2.0 * cube_landmark_meas->meas_quality;
+
+			Matrix9d info = inv_sigma.cwiseProduct(inv_sigma).asDiagonal();
+			e->setInformation(info);
+			graph.addEdge(e);				// NOTE 添加边
 	  }
 	  
 	  // camera vertex, add cam-cam odometry edges
