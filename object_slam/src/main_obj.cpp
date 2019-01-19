@@ -742,8 +742,8 @@ int main(int argc,char* argv[])
     // 输出三个文件的行数：read data size:  51  58  58.
     std::cout<<"read data size:  "<<pred_frame_objects.rows()<<"  "<<init_frame_poses.rows()<<"  "<<truth_frame_poses.rows()<<std::endl;
     
-    // STEP 【3：传入参数开始建图.】
-	std::cout << "+++++++++++++ 参数读取完毕，开始计算与优化！！ ++++++++++++" << std::endl;
+    // STEP 【3：传入参数开始增量式图优化.】
+	std::cout << "+++++++++++++ 参数读取完毕，开始优化！！ ++++++++++++" << std::endl;
     incremental_build_graph(pred_frame_objects,init_frame_poses,truth_frame_poses);    
     
     return 0;
