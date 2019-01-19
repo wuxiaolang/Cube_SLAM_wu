@@ -56,7 +56,7 @@ cv::Mat_<float> matx_to3d_, maty_to3d_;
 
 // for converting depth image to point cloud.
 void set_up_calibration(const Eigen::Matrix3f& calibration_mat,const int im_height,const int im_width)
-{  
+{
     matx_to3d_.create(im_height, im_width);
     maty_to3d_.create(im_height, im_width);
     float center_x=calibration_mat(0,2);  //cx
@@ -582,7 +582,7 @@ void incremental_build_graph(Eigen::MatrixXd& offline_pred_frame_objects, Eigen:
 	  }
 	  
 	  // STEP 5 G2O 优化.
-	  // STEP 5.1 设置 g2o 中的立方体顶点，本数据集中只有一个.
+	  // STEP 5.1 第一帧时，设置 g2o 中的立方体顶点，本数据集中只有一个.
 	  // set up g2o cube vertex. only one in this dataset
 	  if (frame_index == 0)
 	  {
@@ -605,8 +605,7 @@ void incremental_build_graph(Eigen::MatrixXd& offline_pred_frame_objects, Eigen:
 	  vSE3->setEstimate(curr_cam_pose_Twc.inverse()); //g2o vertex usually stores world to camera pose.
 	  vSE3->setFixed(frame_index==0);		
 	  
-	  // STEP 5.3 优化边.
-	  // 添加 G2O的边：相机-物体测量.
+	  // STEP 5.3 添加 G2O的边：相机-物体测量.
 	  // add g2o camera-object measurement edges, if there is
 	  if (currframe->observed_cuboids.size()>0)
 	  {
@@ -618,16 +617,17 @@ void incremental_build_graph(Eigen::MatrixXd& offline_pred_frame_objects, Eigen:
 			e->setMeasurement(cube_landmark_meas->cube_meas);
 			e->setId(frame_index);
 
-			// TODO inv_sigma 和 info 是啥？
+			// TODO inv_sigma 是啥？
 			Vector9d inv_sigma;
 			inv_sigma << 1,1,1,1,1,1,1,1,1;
 			inv_sigma = inv_sigma * 2.0 * cube_landmark_meas->meas_quality;
-
+			// 格式转换	Vector9d ——> Matrix9d
 			Matrix9d info = inv_sigma.cwiseProduct(inv_sigma).asDiagonal();
 			e->setInformation(info);
 			graph.addEdge(e);				// NOTE 添加边
 	  }
 	  
+	  // STEP 5.4 相机——顶点，相机-相机帧间旋转——边
 	  // camera vertex, add cam-cam odometry edges
 	  if (frame_index>0)
 	  {
@@ -637,33 +637,43 @@ void incremental_build_graph(Eigen::MatrixXd& offline_pred_frame_objects, Eigen:
 		e->setMeasurement(odom_val);
 
 		e->setId(total_frame_number+frame_index);
-		Vector6d inv_sigma;inv_sigma<<1,1,1,1,1,1;
-		inv_sigma = inv_sigma*1.0;
+		Vector6d inv_sigma;
+		inv_sigma << 1,1,1,1,1,1;
+		inv_sigma = inv_sigma * 1.0;
 		Matrix6d info = inv_sigma.cwiseProduct(inv_sigma).asDiagonal();
 		e->setInformation(info);
 		graph.addEdge(e);
 	  }
+	  // STEP 5.4 开始优化！！
 	  graph.initializeOptimization();
 	  graph.optimize(5); // do optimization!
-	  
-	  
+
+	  // 检索优化结果，以调试可视化.
 	  // retrieve the optimization result, for debug visualization
 	  for (int j=0;j<=frame_index;j++)
 	  {
-		all_frames[j]->cam_pose_Tcw = all_frames[j]->pose_vertex->estimate();
-		all_frames[j]->cam_pose_Twc = all_frames[j]->cam_pose_Tcw.inverse();
+		  	// 优化之后的位姿（世界——相机）.
+			all_frames[j]->cam_pose_Tcw = all_frames[j]->pose_vertex->estimate();
+			// 相机——世界.
+			all_frames[j]->cam_pose_Twc = all_frames[j]->cam_pose_Tcw.inverse();
 	  }
-	  object_landmark* current_landmark = new object_landmark();  current_landmark->cube_vertex = new g2o::VertexCuboid();
+
+	  // NOTE 优化之后的物体位姿 vCube->estimate() —— cube_pose_opti_history
+	  object_landmark* current_landmark = new object_landmark();  
+	  current_landmark->cube_vertex = new g2o::VertexCuboid();
 	  current_landmark->cube_vertex->setEstimate(vCube->estimate());
 	  cube_pose_opti_history[frame_index] = current_landmark;
 	  
+	  // NOTE 原始检测到的物体位姿 global_cube —— cube_pose_raw_detected_history
 	  if (all_frames[frame_index]->observed_cuboids.size()>0)
 	  {
+		  // @PARAM cube_landmark_meas-当前帧的立方体路标的测量
 	      object_landmark* cube_landmark_meas = all_frames[frame_index]->observed_cuboids[0];
 	      g2o::cuboid local_cube = cube_landmark_meas->cube_meas;
-	      
 	      g2o::cuboid global_cube = local_cube.transform_from(all_frames[frame_index]->cam_pose_Twc);
-	      object_landmark* tempcuboids2 = new object_landmark();	  tempcuboids2->cube_vertex = new g2o::VertexCuboid();
+
+	      object_landmark* tempcuboids2 = new object_landmark();	  
+		  tempcuboids2->cube_vertex = new g2o::VertexCuboid();
 	      tempcuboids2->cube_vertex->setEstimate(global_cube);
 	      cube_pose_raw_detected_history[frame_index] = tempcuboids2;
 	  }
@@ -671,8 +681,8 @@ void incremental_build_graph(Eigen::MatrixXd& offline_pred_frame_objects, Eigen:
 	      cube_pose_raw_detected_history[frame_index] = nullptr;
     }
     
-    cout<<"Finish all optimization! Begin visualization."<<endl;
-    
+	// STEP 6. 结束优化，开始可视化.
+    cout<<"+++++++++++++Finish all optimization! Begin visualization.++++++++++++"<<endl;
     publish_all_poses(all_frames, cube_pose_opti_history,cube_pose_raw_detected_history,truth_frame_poses);      
 }
 
@@ -733,6 +743,7 @@ int main(int argc,char* argv[])
     std::cout<<"read data size:  "<<pred_frame_objects.rows()<<"  "<<init_frame_poses.rows()<<"  "<<truth_frame_poses.rows()<<std::endl;
     
     // STEP 【3：传入参数开始建图.】
+	std::cout << "+++++++++++++ 参数读取完毕，开始计算与优化！！ ++++++++++++" << std::endl;
     incremental_build_graph(pred_frame_objects,init_frame_poses,truth_frame_poses);    
     
     return 0;
