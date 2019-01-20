@@ -19,7 +19,7 @@
 using namespace cv::line_descriptor;
 
 
-// BRIEF 线检测对象 【line_lbd_detect】
+// BRIEF 线检测类 【line_lbd_detect】
 class line_lbd_detect
 {
 public:

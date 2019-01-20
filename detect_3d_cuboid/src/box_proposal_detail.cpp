@@ -55,6 +55,12 @@ void detect_3d_cuboid::set_cam_pose(const Matrix4d& transToWolrd)
 }
 
 // NOTE 立方体检测函数.
+/* 输入：原始图像 rgb_img
+		相机位姿 transToWolrd
+		2D 检测框信息 obj_bbox_coors
+		提取的边缘矩阵信息 all_lines_raw
+   输出：立方体提案 all_object_cuboids
+*/
 void detect_3d_cuboid::detect_cuboid(const cv::Mat& rgb_img, const Matrix4d& transToWolrd, const MatrixXd& obj_bbox_coors,
 				     MatrixXd all_lines_raw, std::vector<ObjectSet>& all_object_cuboids)
 {

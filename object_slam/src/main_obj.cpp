@@ -428,6 +428,8 @@ void incremental_build_graph(Eigen::MatrixXd& offline_pred_frame_objects, Eigen:
 			// NOTE 计算当前帧的位姿（相机->相机） CT_wc =(T_odom)^-1
 			curr_cam_pose_Twc = (odom_val*prev_pose_Tcw).inverse();
 		}
+		// std::cout << "第 " << frame_index << "帧的位姿：\n" << curr_cam_pose_Twc << std::endl;
+		// std::cout << "odom_val：\n" << odom_val << std::endl;
 	  
 	  // STEP 2. 信息存储.
 	  // 将当前帧 currframe 的信息存放在 all_frames 序列中.
@@ -454,7 +456,7 @@ void incremental_build_graph(Eigen::MatrixXd& offline_pred_frame_objects, Eigen:
 		  // @PARAM all_lines_raw 边缘线存储的矩阵.
 	      cv::Mat all_lines_mat;
 	      line_lbd_obj.detect_filter_lines(raw_rgb_img, all_lines_mat);
-	      Eigen::MatrixXd all_lines_raw(all_lines_mat.rows,4);
+	      Eigen::MatrixXd all_lines_raw(all_lines_mat.rows,4);		// TODO这里的4是什么，4条线吗？？
 	      for (int rr=0;rr<all_lines_mat.rows;rr++)
 				for (int cc=0;cc<4;cc++)
 		  all_lines_raw(rr,cc) = all_lines_mat.at<float>(rr,cc);
@@ -520,7 +522,7 @@ void incremental_build_graph(Eigen::MatrixXd& offline_pred_frame_objects, Eigen:
 					cube_local_meas = cube_ground_value.transform_to(curr_cam_pose_Twc_new);
 				}
 				
-				// NOTE 提案的误差
+				// NOTE 提案的误差，误差来自于  detected_cube 对象，其又来自于 frames_cuboids 序列，由前面的【立方体检测函数】得到
 				proposal_error = detected_cube->normalized_error;
 	      }
 	  }
@@ -648,7 +650,7 @@ void incremental_build_graph(Eigen::MatrixXd& offline_pred_frame_objects, Eigen:
 	  graph.initializeOptimization();
 	  graph.optimize(5); // do optimization!
 
-	  // 检索优化结果，以调试可视化.
+	  // 优化之后相机的位姿，存储到当前帧序列 all_frames 中
 	  // retrieve the optimization result, for debug visualization
 	  for (int j=0;j<=frame_index;j++)
 	  {
