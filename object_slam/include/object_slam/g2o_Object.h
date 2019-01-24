@@ -149,21 +149,23 @@ class cuboid
       
       Matrix4d similarityTransform() const
       {
-	  Matrix4d res = pose.to_homogeneous_matrix();
-	  Matrix3d scale_mat = scale.asDiagonal();
-	  res.topLeftCorner<3,3>() = res.topLeftCorner<3,3>()*scale_mat;
-	  return res;
+			Matrix4d res = pose.to_homogeneous_matrix();
+			Matrix3d scale_mat = scale.asDiagonal();
+			res.topLeftCorner<3,3>() = res.topLeftCorner<3,3>()*scale_mat;
+			return res;
       }
       
+	  // 立方体有 8 个角，定义 3*8 的矩阵表示其坐标 corners_body .
       // 8 corners 3*8 matrix, each row is x y z
       Matrix3Xd compute3D_BoxCorner() const
       {
-	  Matrix3Xd corners_body;corners_body.resize(3,8);
-	  corners_body<< 1, 1, -1, -1, 1, 1, -1, -1,
-			 1, -1, -1, 1, 1, -1, -1, 1,
-			-1, -1, -1, -1, 1, 1, 1, 1;
-	  Matrix3Xd corners_world = homo_to_real_coord<double>(similarityTransform()*real_to_homo_coord<double>(corners_body));
-	  return corners_world;
+			Matrix3Xd corners_body;
+			corners_body.resize(3,8);
+			corners_body<< 1,  1, -1, -1, 1,  1, -1, -1,
+						   1, -1, -1,  1, 1, -1, -1,  1,
+						  -1, -1, -1, -1, 1,  1,  1,  1;
+			Matrix3Xd corners_world = homo_to_real_coord<double>(similarityTransform()*real_to_homo_coord<double>(corners_body));
+			return corners_world;
       }
       
       // get rectangles after projection  [topleft, bottomright]

@@ -71,7 +71,9 @@ void set_up_calibration(const Eigen::Matrix3f& calibration_mat,const int im_heig
     }
 }
 
-// depth img is already in m unit.
+// 下采样点云图，深度图已经以 m 为单位.
+// 输入：原始rgb图 rgb_img		深度图 depth_img 		transToWorld		point_cloud
+
 void depth_to_cloud(const cv::Mat& rgb_img, const cv::Mat& depth_img,const Eigen::Matrix4f transToWorld, CloudXYZRGB::Ptr& point_cloud,bool downsample=false)
 {
     pcl::PointXYZRGB pt;
@@ -100,45 +102,65 @@ void depth_to_cloud(const cv::Mat& rgb_img, const cv::Mat& depth_img,const Eigen
     }
 }
 
+// 前后标记立方体.
 // one cuboid need front and back markers...
 void cuboid_corner_to_marker(const Matrix38d& cube_corners,visualization_msgs::Marker& marker, int bodyOrfront)
 {
     Eigen::VectorXd edge_pt_ids;
-    if (bodyOrfront==0) { // body edges
-	edge_pt_ids.resize(16); edge_pt_ids<<1,2,3,4,1,5,6,7,8,5,6,2,3,7,8,4;edge_pt_ids.array()-=1;
-    }else { // front face edges
-	edge_pt_ids.resize(5); edge_pt_ids<<1,2,6,5,1;edge_pt_ids.array()-=1;
+    if (bodyOrfront==0) 
+	{ 	// 整体边缘
+		edge_pt_ids.resize(16); 
+		edge_pt_ids << 1,2,3,4,1,5,6,7,8,5,6,2,3,7,8,4;
+		edge_pt_ids.array()-=1;
+    }
+	else 
+	{ 	// 正面边缘
+		edge_pt_ids.resize(5); 
+		edge_pt_ids<<1,2,6,5,1;
+		edge_pt_ids.array()-=1;
     }
     marker.points.resize(edge_pt_ids.rows());
     for (int pt_id=0; pt_id<edge_pt_ids.rows(); pt_id++)
     {
-	marker.points[pt_id].x = cube_corners(0, edge_pt_ids(pt_id));
-	marker.points[pt_id].y = cube_corners(1, edge_pt_ids(pt_id));
-	marker.points[pt_id].z = cube_corners(2, edge_pt_ids(pt_id));
+		marker.points[pt_id].x = cube_corners(0, edge_pt_ids(pt_id));
+		marker.points[pt_id].y = cube_corners(1, edge_pt_ids(pt_id));
+		marker.points[pt_id].z = cube_corners(2, edge_pt_ids(pt_id));
     }
 }
 
+// BRIEF 立方体需要有前后标记.
+// 输入参数：路标object_landmark  颜色向量.
 // one cuboid need front and back markers...  rgbcolor is 0-1 based
 visualization_msgs::MarkerArray cuboids_to_marker(object_landmark* obj_landmark, Vector3d rgbcolor) 
 {
-    visualization_msgs::MarkerArray plane_markers;  visualization_msgs::Marker marker;
+    visualization_msgs::MarkerArray plane_markers;  
+	visualization_msgs::Marker marker;
+
     if (obj_landmark==nullptr)
 	return plane_markers;
 
-    marker.header.frame_id="/world";  marker.header.stamp=ros::Time::now();
+	// 设置 marker.
+    marker.header.frame_id="/world";  
+	marker.header.stamp=ros::Time::now();
     marker.id = 0; //0
-    marker.type = visualization_msgs::Marker::LINE_STRIP;   marker.action = visualization_msgs::Marker::ADD;
-    marker.color.r = rgbcolor(0); marker.color.g = rgbcolor(1); marker.color.b = rgbcolor(2); marker.color.a = 1.0;
+    marker.type = visualization_msgs::Marker::LINE_STRIP;   
+	marker.action = visualization_msgs::Marker::ADD;
+    marker.color.r = rgbcolor(0); 
+	marker.color.g = rgbcolor(1); 
+	marker.color.b = rgbcolor(2); 
+	marker.color.a = 1.0;
     marker.scale.x = 0.02;
 
+	// 最后显示的立方体 cube_opti；
     g2o::cuboid cube_opti = obj_landmark->cube_vertex->estimate();
     Eigen::MatrixXd cube_corners = cube_opti.compute3D_BoxCorner();
     
+	// 每个立方体需要两个 marker，一个用于所有的边缘，一个用于前面的边缘，可以具有不同的额颜色.
     for (int ii=0;ii<2;ii++) // each cuboid needs two markers!!! one for all edges, one for front facing edge, could with different color.
     {
-	marker.id++;
-	cuboid_corner_to_marker(cube_corners,marker, ii);
-	plane_markers.markers.push_back(marker);
+		marker.id++;
+		cuboid_corner_to_marker(cube_corners,marker, ii);
+		plane_markers.markers.push_back(marker);
     }
     return plane_markers;
 }
@@ -167,10 +189,11 @@ nav_msgs::Odometry posenode_to_odommsgs(const g2o::SE3Quat &pose_Twc,const std_m
 }
 
 
-// publish every frame's raw and optimized results
+// BRIEF 发布每帧的原始和优化结果.
 void publish_all_poses(std::vector<tracking_frame*> all_frames,std::vector<object_landmark*> cube_landmarks_history,
 		       std::vector<object_landmark*> all_frame_rawcubes, Eigen::MatrixXd& truth_frame_poses)
 {
+	// STEP 1.定义 ROS 消息发布器和相关变量.
     ros::NodeHandle n;
     ros::Publisher pub_slam_all_poses = n.advertise<geometry_msgs::PoseArray>("/slam_pose_array", 10);
     ros::Publisher pub_slam_odompose = n.advertise<nav_msgs::Odometry>("/slam_odom_pose", 10);
@@ -178,81 +201,124 @@ void publish_all_poses(std::vector<tracking_frame*> all_frames,std::vector<objec
     ros::Publisher pub_truth_odompose = n.advertise<nav_msgs::Odometry>("/truth_odom_pose", 10);
     ros::Publisher pub_slam_path = n.advertise<nav_msgs::Path>( "/slam_pose_paths", 10 );
     ros::Publisher pub_truth_path = n.advertise<nav_msgs::Path>( "/truth_pose_paths", 10 );
-    ros::Publisher pub_final_opti_cube = n.advertise<visualization_msgs::MarkerArray>("/cubes_opti", 10); //final unique cube pose
-    ros::Publisher pub_history_opti_cube = n.advertise<visualization_msgs::MarkerArray>("/cubes_opti_hist", 10); // landmark cube pose after each optimization
+    ros::Publisher pub_final_opti_cube = n.advertise<visualization_msgs::MarkerArray>("/cubes_opti", 10); //最终独立的物体位姿
+    ros::Publisher pub_history_opti_cube = n.advertise<visualization_msgs::MarkerArray>("/cubes_opti_hist", 10); // 每次优化后的立方体路标
     ros::Publisher pub_frame_raw_cube = n.advertise<visualization_msgs::MarkerArray>("/cubes_raw_frame", 10);
     ros::Publisher pub_2d_cuboid_project = n.advertise<sensor_msgs::Image>("/cuboid_project_img", 10);
     ros::Publisher raw_cloud_pub = n.advertise<CloudXYZRGB> ("/raw_point_cloud", 50);
     
     int total_frame_number = all_frames.size();
     
-    // prepare all paths messages.
-    geometry_msgs::PoseArray all_pred_pose_array;    std::vector<nav_msgs::Odometry> all_pred_pose_odoms;
-    geometry_msgs::PoseArray all_truth_pose_array;    std::vector<nav_msgs::Odometry> all_truth_pose_odoms;
-    nav_msgs::Path path_truths,path_preds;
-    std_msgs::Header pose_header;    pose_header.frame_id = "/world";    pose_header.stamp = ros::Time::now();
-    path_preds.header = pose_header;    path_truths.header = pose_header;    
+    // 准备所有路径消息.
+    geometry_msgs::PoseArray all_pred_pose_array;    		// geometry_msgs/PoseArray：世界参考系下带有时间戳的位姿.
+	std::vector<nav_msgs::Odometry> all_pred_pose_odoms;	// nav_msgs/Odometry：自由空间中的位姿和速度估计.
+
+    geometry_msgs::PoseArray all_truth_pose_array;    
+	std::vector<nav_msgs::Odometry> all_truth_pose_odoms;
+
+	// 世界坐标系的时间戳 pose_header
+    std_msgs::Header pose_header;    				// std_msgs/Header：通常用于在特定坐标系中传送带时间戳的数据.
+	pose_header.frame_id = "/world";    
+	pose_header.stamp = ros::Time::now();
+
+	// 姿态数组，包括位姿和时间戳：path_preds，path_truths.
+    nav_msgs::Path path_truths,path_preds;			// nav_msgs/Path：姿态数组，表示机器人路径.
+    path_preds.header = pose_header;    
+	path_truths.header = pose_header;    
+
+	// STEP 2.读取估计的优化之后的相机位姿.
     for (int i = 0; i < total_frame_number; i++)
     {
-	all_pred_pose_array.poses.push_back(posenode_to_geomsgs(all_frames[i]->cam_pose_Twc));
-	all_pred_pose_odoms.push_back(posenode_to_odommsgs(all_frames[i]->cam_pose_Twc,pose_header) );
-	
-	geometry_msgs::PoseStamped postamp;
-	postamp.pose = posenode_to_geomsgs(all_frames[i]->cam_pose_Twc);
-	postamp.header = pose_header;
-	path_preds.poses.push_back(postamp);
+		// cam_pose_Twc：优化之后的相机位姿.
+		// 保存优化之后的相机位姿和时间戳.
+		all_pred_pose_array.poses.push_back(posenode_to_geomsgs(all_frames[i]->cam_pose_Twc));
+		all_pred_pose_odoms.push_back(posenode_to_odommsgs(all_frames[i]->cam_pose_Twc,pose_header) );
+		
+		// 位姿时间戳 postamp.
+		geometry_msgs::PoseStamped postamp;
+		postamp.pose = posenode_to_geomsgs(all_frames[i]->cam_pose_Twc);
+		postamp.header = pose_header;
+
+		// NOTE 最终将估计的位姿信息存储到 path_preds.
+		path_preds.poses.push_back(postamp);
     }
+
+	// STEP 3.读取真实的相机位姿..
     if (truth_frame_poses.rows()>0)
     {
-	for (int i=0; i < total_frame_number;i++)
-	{
-	    geometry_msgs::Pose pose_msg;
-	    pose_msg.position.x=truth_frame_poses(i,1);    pose_msg.position.y=truth_frame_poses(i,2);    pose_msg.position.z=truth_frame_poses(i,3);
-	    pose_msg.orientation.x = truth_frame_poses(i,4);	pose_msg.orientation.y = truth_frame_poses(i,5);
-	    pose_msg.orientation.z = truth_frame_poses(i,6);	pose_msg.orientation.w = truth_frame_poses(i,7);
-	    all_truth_pose_array.poses.push_back(pose_msg);
-	    nav_msgs::Odometry odom_msg;odom_msg.pose.pose=pose_msg;
-	    odom_msg.header = pose_header;
-	    all_truth_pose_odoms.push_back(odom_msg);
-	    
-	    geometry_msgs::PoseStamped postamp;
-	    postamp.pose = pose_msg;
-	    postamp.header = pose_header;
-	    path_truths.poses.push_back(postamp);
-	}
+		for (int i=0; i < total_frame_number;i++)
+		{
+			// 在自由空间中的位姿表示，包括位置和方向.
+			geometry_msgs::Pose pose_msg;
+			pose_msg.position.x=truth_frame_poses(i,1);    
+			pose_msg.position.y=truth_frame_poses(i,2);    
+			pose_msg.position.z=truth_frame_poses(i,3);
+
+			pose_msg.orientation.x = truth_frame_poses(i,4);	
+			pose_msg.orientation.y = truth_frame_poses(i,5);
+			pose_msg.orientation.z = truth_frame_poses(i,6);	
+			pose_msg.orientation.w = truth_frame_poses(i,7);
+
+			// 读取真实的相机位姿存放在 all_truth_pose_array 中.
+			all_truth_pose_array.poses.push_back(pose_msg);
+
+			// 自由空间中的相机位姿 all_truth_pose_odoms.
+			nav_msgs::Odometry odom_msg;
+			odom_msg.pose.pose=pose_msg;
+			odom_msg.header = pose_header;
+			all_truth_pose_odoms.push_back(odom_msg);
+			
+			// 时间戳 postamp.
+			geometry_msgs::PoseStamped postamp;
+			postamp.pose = pose_msg;
+			postamp.header = pose_header;
+
+			// NOTE 最终将参考系下真实的位姿信息存储到 path_truths.
+			path_truths.poses.push_back(postamp);
+		}
     }
-    all_pred_pose_array.header.stamp=ros::Time::now();    all_pred_pose_array.header.frame_id="/world";
-    all_truth_pose_array.header.stamp=ros::Time::now();    all_truth_pose_array.header.frame_id="/world";
+
+	// 指定坐标系和时间戳.
+    all_pred_pose_array.header.stamp=ros::Time::now();    
+	all_pred_pose_array.header.frame_id="/world";
+    all_truth_pose_array.header.stamp=ros::Time::now();    
+	all_truth_pose_array.header.frame_id="/world";
     
-        
+    // STEP 4.保存相机和物体的位姿.
     if (save_results_to_txt)  // record cam pose and object pose
     {
-	ofstream resultsFile;
-	string resultsPath = base_folder + "output_cam_poses.txt";
-	cout<<"resultsPath  "<<resultsPath<<endl;
-	resultsFile.open(resultsPath.c_str());
-	resultsFile << "# timestamp tx ty tz qx qy qz qw"<<"\n";
-	for (int i=0;i<total_frame_number;i++)
-	{
-	    double time_string=truth_frame_poses(i,0);
-	    ros::Time time_img(time_string);
-	    resultsFile << time_img<<"  ";	    
-	    resultsFile << all_frames[i]->cam_pose_Twc.toVector().transpose()<<"\n";
-	}
-	resultsFile.close();
+		// 写入相机位姿：时间戳、位置、方向.
+		ofstream resultsFile;
+		string resultsPath = base_folder + "output_cam_poses.txt";
+		cout << "resultsPath  " << resultsPath << endl;
+		resultsFile.open(resultsPath.c_str());
+		resultsFile << "# timestamp tx ty tz qx qy qz qw"<<"\n";
+		for (int i=0; i<total_frame_number; i++)
+		{
+			// 时间戳读取真实的相机的时间戳.
+			double time_string=truth_frame_poses(i,0);
+			ros::Time time_img(time_string);
+			resultsFile << time_img<<"  ";	    
+			// 读取位置信息，转换为向量形式.
+			resultsFile << all_frames[i]->cam_pose_Twc.toVector().transpose()<<"\n";
+		}
+		resultsFile.close();
 		
-	ofstream objresultsFile;
-	string objresultsPath = base_folder + "output_obj_poses.txt";
-	objresultsFile.open(objresultsPath.c_str());
-	for (size_t j=0;j<cube_landmarks_history.size();j++)
-	{
-	    g2o::cuboid cube_opti = cube_landmarks_history[j]->cube_vertex->estimate();
-	    // transform it to local ground plane.... suitable for matlab processing.
-	    objresultsFile << cube_opti.toMinimalVector().transpose()<<" "<<"\n";
-	}
-	objresultsFile.close();
-    }    
+		// 写入物体位姿.
+		ofstream objresultsFile;
+		string objresultsPath = base_folder + "output_obj_poses.txt";
+		objresultsFile.open(objresultsPath.c_str());
+		for (size_t j=0;j<cube_landmarks_history.size();j++)
+		{
+			// 优化之后的相机位姿 cube_landmarks_history.
+			g2o::cuboid cube_opti = cube_landmarks_history[j]->cube_vertex->estimate();
+			// transform it to local ground plane.... suitable for matlab processing.
+			objresultsFile << cube_opti.toMinimalVector().transpose()<<" "<<"\n";
+		}
+		objresultsFile.close();
+    }
     
+	// 数据集的相机参数.
     // sensor parameter for TUM cabinet data!
     Eigen::Matrix3f calib;
     float depth_map_scaling = 5000;
@@ -261,81 +327,106 @@ void publish_all_poses(std::vector<tracking_frame*> all_frames,std::vector<objec
 	    0,      0,     1;
     set_up_calibration(calib,480,640);
     
+	// TODO finalcube_markers
     visualization_msgs::MarkerArray finalcube_markers = cuboids_to_marker(cube_landmarks_history.back(),Vector3d(0,1,0));
     
+	// 是否显示点云信息，用于可视化.
     bool show_truth_cloud = true;  // show point cloud using camera pose. for visualization purpose
         
     pcl::PCLPointCloud2 pcd_cloud2;
     
     ros::Rate loop_rate(5);  //5
     int frame_number = -1;
+
     while ( n.ok() )
     {
-	frame_number++;
+		frame_number++;
 	
-	if (0) // directly show final results
-	{
-	    pub_slam_all_poses.publish(all_pred_pose_array);	pub_truth_all_poses.publish(all_truth_pose_array);
-	    pub_slam_path.publish(path_preds);	pub_truth_path.publish(path_truths);
-	}
-	pub_final_opti_cube.publish(finalcube_markers);
-	
-	if (frame_number<total_frame_number)
-	{
-	    // publish cuboid landmarks, after each frame's g2o optimization
-	    if (cube_landmarks_history[frame_number]!=nullptr)
-		pub_history_opti_cube.publish(cuboids_to_marker(cube_landmarks_history[frame_number],Vector3d(1,0,0)));
-	    
-	    // publish raw detected cube in each frame, before optimization
-	    if (all_frame_rawcubes.size()>0 && all_frame_rawcubes[frame_number]!=nullptr)
-		pub_frame_raw_cube.publish(cuboids_to_marker(all_frame_rawcubes[frame_number],Vector3d(0,0,1)));
-
-	    // publish camera pose estimation of this frame
-	    pub_slam_odompose.publish(all_pred_pose_odoms[frame_number]);
-	    pub_truth_odompose.publish(all_truth_pose_odoms[frame_number]);
-	    
-// 	    std::cout<<"Frame position x/y:   "<<frame_number<<"        "<<all_pred_pose_odoms[frame_number].pose.pose.position.x<<"  "<<
-// 			  all_pred_pose_odoms[frame_number].pose.pose.position.y <<std::endl;
-
-	    char frame_index_c[256];	sprintf(frame_index_c,"%04d",frame_number);  // format into 4 digit
-	    
-	    cv::Mat cuboid_2d_proj_img = all_frames[frame_number]->cuboids_2d_img;
-	    
-	    std::string raw_rgb_img_name = base_folder+"raw_imgs/" + std::string(frame_index_c) + "_rgb_raw.jpg";
-	    cv::Mat raw_rgb_img = cv::imread(raw_rgb_img_name, 1);
-
-	    if (show_truth_cloud && (truth_frame_poses.rows()>0))
-		if (frame_number%2==0) // show point cloud every N frames
+		if (0) // directly show final results
 		{
-		    std::string raw_depth_img_name = base_folder+"depth_imgs/" + std::string(frame_index_c) + "_depth_raw.png";
-		    cv::Mat raw_depth_img = cv::imread(raw_depth_img_name, CV_LOAD_IMAGE_ANYDEPTH);
-		    raw_depth_img.convertTo(raw_depth_img, CV_32FC1, 1.0/depth_map_scaling,0);
-
-		    CloudXYZRGB::Ptr point_cloud(new CloudXYZRGB());
-		    Eigen::Matrix4f truth_pose_matrix=g2o::SE3Quat(truth_frame_poses.row(frame_number).segment<7>(1)).to_homogeneous_matrix().cast<float>();
-
-		    depth_to_cloud(raw_rgb_img, raw_depth_img, truth_pose_matrix, point_cloud, true); // need to downsample cloud, otherwise too many
-		    ros::Time curr_time=ros::Time::now();
-
-		    point_cloud->header.frame_id = "/world";
-		    point_cloud->header.stamp = (curr_time.toNSec() / 1000ull);
-		    raw_cloud_pub.publish(point_cloud);
+			pub_slam_all_poses.publish(all_pred_pose_array);	
+			pub_truth_all_poses.publish(all_truth_pose_array);
+			pub_slam_path.publish(path_preds);	
+			pub_truth_path.publish(path_truths);
 		}
-	    
-	    cv_bridge::CvImage out_image;
-	    out_image.header.stamp=ros::Time::now();
-	    out_image.image=cuboid_2d_proj_img;
-	    out_image.encoding=sensor_msgs::image_encodings::TYPE_8UC3;
-	    pub_2d_cuboid_project.publish(out_image.toImageMsg());
-	}
+
+		pub_final_opti_cube.publish(finalcube_markers);
 	
-	if (frame_number==int(all_pred_pose_odoms.size()))
-	{
-	    cout<<"Finish all visulialization!"<<endl;
-	}
-	
-	ros::spinOnce();
-	loop_rate.sleep();
+		if (frame_number<total_frame_number)
+		{
+			// NOTE 在每帧经过G20优化之后发布其立方体路标，用蓝色表示 pub_history_opti_cube.
+			if (cube_landmarks_history[frame_number]!=nullptr)
+			pub_history_opti_cube.publish(cuboids_to_marker(cube_landmarks_history[frame_number],Vector3d(1,0,0)));
+			
+			// NOTE 发布优化之前每帧中原始的立方体，用红色表示 pub_frame_raw_cube.
+			if (all_frame_rawcubes.size()>0 && all_frame_rawcubes[frame_number]!=nullptr)
+			pub_frame_raw_cube.publish(cuboids_to_marker(all_frame_rawcubes[frame_number],Vector3d(0,0,1)));
+
+			// NOTE 发布该帧对应的位姿信息.
+			// 估计的位姿：pub_slam_odompose.
+			// 真实的位姿：pub_truth_odompose.
+			pub_slam_odompose.publish(all_pred_pose_odoms[frame_number]);
+			pub_truth_odompose.publish(all_truth_pose_odoms[frame_number]);
+			
+			// 输出相机在世界中的坐标.
+		    std::cout<<"Frame position x/y:   "<< frame_number <<"        "
+			                                   << all_pred_pose_odoms[frame_number].pose.pose.position.x << "  "
+											   << all_pred_pose_odoms[frame_number].pose.pose.position.y << "  "
+											   << all_pred_pose_odoms[frame_number].pose.pose.position.z << std::endl;
+
+			// 将 frame_number 化为4位字符 frame_index_c
+			char frame_index_c[256];	
+			sprintf(frame_index_c,"%04d",frame_number);  // format into 4 digit
+			
+			// 读取该帧带有立方体提案的图像.
+			cv::Mat cuboid_2d_proj_img = all_frames[frame_number]->cuboids_2d_img;
+
+			// 读取原始 rgb 图像 raw_rgb_img.
+			std::string raw_rgb_img_name = base_folder+"raw_imgs/" + std::string(frame_index_c) + "_rgb_raw.jpg";
+			cv::Mat raw_rgb_img = cv::imread(raw_rgb_img_name, 1);
+
+			// 隔帧显示点云图.
+			if (show_truth_cloud && (truth_frame_poses.rows()>0))
+			{
+				if (frame_number%2==0) // show point cloud every N frames
+				{
+					// 读取点云图 raw_depth_img 并转换格式.
+					std::string raw_depth_img_name = base_folder+"depth_imgs/" + std::string(frame_index_c) + "_depth_raw.png";
+					cv::Mat raw_depth_img = cv::imread(raw_depth_img_name, CV_LOAD_IMAGE_ANYDEPTH);
+					raw_depth_img.convertTo(raw_depth_img, CV_32FC1, 1.0/depth_map_scaling,0);
+
+					// 读取点云信息 point_cloud.
+					CloudXYZRGB::Ptr point_cloud(new CloudXYZRGB());
+
+					// 读取真实的相机位姿，李代数表示
+					Eigen::Matrix4f truth_pose_matrix=g2o::SE3Quat(truth_frame_poses.row(frame_number).segment<7>(1)).to_homogeneous_matrix().cast<float>();
+					// std::cout<<"truth_pose_matrix:   \n"<< truth_pose_matrix << std::endl;
+
+					// 下采样点云，否则太多.
+					depth_to_cloud(raw_rgb_img, raw_depth_img, truth_pose_matrix, point_cloud, true); // need to downsample cloud, otherwise too many
+					ros::Time curr_time=ros::Time::now();
+
+					// 发布点云图消息.
+					point_cloud->header.frame_id = "/world";
+					point_cloud->header.stamp = (curr_time.toNSec() / 1000ull);
+					raw_cloud_pub.publish(point_cloud);
+				}
+			}
+			
+			cv_bridge::CvImage out_image;
+			out_image.header.stamp=ros::Time::now();
+			out_image.image=cuboid_2d_proj_img;
+			out_image.encoding=sensor_msgs::image_encodings::TYPE_8UC3;
+			pub_2d_cuboid_project.publish(out_image.toImageMsg());
+		}
+		
+		if (frame_number==int(all_pred_pose_odoms.size()))
+		{
+			cout<<"Finish all visulialization!"<<endl;
+		}
+		
+		ros::spinOnce();
+		loop_rate.sleep();
     }  
 }
 

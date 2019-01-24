@@ -6,7 +6,7 @@
     <param name="base_folder" value="$(find object_slam)/data/" />
     
     <param name="online_detect_mode" value="true" />  # detect cuboid online or read offline matlab txt
-    <param name="save_results_to_txt" value="false" />
+    <param name="save_results_to_txt" value="true" />
     
     <!-- launch rviz -->
     <!-- <node pkg="rviz" type="rviz" name="rviz" args="-d $(find object_slam)/rviz/object_slam.rviz"/>	-->
