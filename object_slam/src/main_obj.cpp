@@ -71,9 +71,8 @@ void set_up_calibration(const Eigen::Matrix3f& calibration_mat,const int im_heig
     }
 }
 
-// 下采样点云图，深度图已经以 m 为单位.
-// 输入：原始rgb图 rgb_img		深度图 depth_img 		transToWorld		point_cloud
-
+// BRIEF 下采样点云图，深度图已经以 m 为单位.
+// 输入：原始rgb图 rgb_img		深度图 depth_img 		相机真实位姿 transToWorld		采样之后的点云 point_cloud
 void depth_to_cloud(const cv::Mat& rgb_img, const cv::Mat& depth_img,const Eigen::Matrix4f transToWorld, CloudXYZRGB::Ptr& point_cloud,bool downsample=false)
 {
     pcl::PointXYZRGB pt;
@@ -82,45 +81,54 @@ void depth_to_cloud(const cv::Mat& rgb_img, const cv::Mat& depth_img,const Eigen
     float far_depth_thre = 3.0;
       far_depth_thre = 3;
     int im_width = rgb_img.cols; int im_height= rgb_img.rows;
-    for (int32_t i=0; i<im_width*im_height; i++) {      // row by row
-	int ux=i % im_width; int uy=i / im_width;       
-	float pix_depth= depth_img.at<float>(uy,ux);
-	if (pix_depth>close_depth_thre && pix_depth<far_depth_thre){
-	      pt.z=pix_depth; pt.x=matx_to3d_(uy,ux)*pix_depth; pt.y=maty_to3d_(uy,ux)*pix_depth;
-	      Eigen::VectorXf global_pt=homo_to_real_coord_vec<float>(transToWorld*Eigen::Vector4f(pt.x,pt.y,pt.z,1));  // change to global position
-	      pt.x=global_pt(0); pt.y=global_pt(1); pt.z=global_pt(2);
-	      pt.r = rgb_img.at<cv::Vec3b>(uy,ux)[2]; pt.g = rgb_img.at<cv::Vec3b>(uy,ux)[1]; pt.b = rgb_img.at<cv::Vec3b>(uy,ux)[0];
-	      point_cloud->points.push_back(pt);
-	}
+    for (int32_t i=0; i<im_width*im_height; i++) 
+	{      // row by row
+		int ux=i % im_width; int uy=i / im_width;       
+		float pix_depth= depth_img.at<float>(uy,ux);
+		if (pix_depth>close_depth_thre && pix_depth<far_depth_thre)
+		{
+			pt.z=pix_depth; pt.x=matx_to3d_(uy,ux)*pix_depth; pt.y=maty_to3d_(uy,ux)*pix_depth;
+			Eigen::VectorXf global_pt=homo_to_real_coord_vec<float>(transToWorld*Eigen::Vector4f(pt.x,pt.y,pt.z,1));  // change to global position
+			pt.x=global_pt(0); pt.y=global_pt(1); pt.z=global_pt(2);
+			pt.r = rgb_img.at<cv::Vec3b>(uy,ux)[2]; pt.g = rgb_img.at<cv::Vec3b>(uy,ux)[1]; pt.b = rgb_img.at<cv::Vec3b>(uy,ux)[0];
+			point_cloud->points.push_back(pt);
+		}
     }    
     if (downsample)
     {
-	vox_grid_.setLeafSize(0.02,0.02,0.02);
-	vox_grid_.setDownsampleAllData(true);
-	vox_grid_.setInputCloud(point_cloud);
-	vox_grid_.filter(*point_cloud);
+		vox_grid_.setLeafSize(0.02,0.02,0.02);
+		vox_grid_.setDownsampleAllData(true);
+		vox_grid_.setInputCloud(point_cloud);
+		vox_grid_.filter(*point_cloud);
     }
 }
 
-// 前后标记立方体.
+// BRIEF 前后标记立方体.
 // one cuboid need front and back markers...
+// 输入参数： 8个顶点		marker		id
 void cuboid_corner_to_marker(const Matrix38d& cube_corners,visualization_msgs::Marker& marker, int bodyOrfront)
 {
     Eigen::VectorXd edge_pt_ids;
+	// NOTE 整体的边缘.
     if (bodyOrfront==0) 
-	{ 	// 整体边缘
+	{
 		edge_pt_ids.resize(16); 
+		// NOTE 按顺序连接各个点，连成一个立方体
 		edge_pt_ids << 1,2,3,4,1,5,6,7,8,5,6,2,3,7,8,4;
 		edge_pt_ids.array()-=1;
     }
+	// NOTE 正前方的边缘.
 	else 
-	{ 	// 正面边缘
+	{
 		edge_pt_ids.resize(5); 
+		// NOTE 按顺序连接各个点，平面
 		edge_pt_ids<<1,2,6,5,1;
 		edge_pt_ids.array()-=1;
     }
+
     marker.points.resize(edge_pt_ids.rows());
-    for (int pt_id=0; pt_id<edge_pt_ids.rows(); pt_id++)
+	// 确定各个点的位置，连成线.
+    for (int pt_id = 0; pt_id < edge_pt_ids.rows(); pt_id++)
     {
 		marker.points[pt_id].x = cube_corners(0, edge_pt_ids(pt_id));
 		marker.points[pt_id].y = cube_corners(1, edge_pt_ids(pt_id));
@@ -128,8 +136,8 @@ void cuboid_corner_to_marker(const Matrix38d& cube_corners,visualization_msgs::M
     }
 }
 
-// BRIEF 立方体需要有前后标记.
-// 输入参数：路标object_landmark  颜色向量.
+// BRIEF 立方体需要有前后标记，立方体模型的表达.
+// 输入参数：立方体提案  颜色.
 // one cuboid need front and back markers...  rgbcolor is 0-1 based
 visualization_msgs::MarkerArray cuboids_to_marker(object_landmark* obj_landmark, Vector3d rgbcolor) 
 {
@@ -137,7 +145,7 @@ visualization_msgs::MarkerArray cuboids_to_marker(object_landmark* obj_landmark,
 	visualization_msgs::Marker marker;
 
     if (obj_landmark==nullptr)
-	return plane_markers;
+		return plane_markers;
 
 	// 设置 marker.
     marker.header.frame_id="/world";  
@@ -151,10 +159,12 @@ visualization_msgs::MarkerArray cuboids_to_marker(object_landmark* obj_landmark,
 	marker.color.a = 1.0;
     marker.scale.x = 0.02;
 
-	// 最后显示的立方体 cube_opti；
+	// 显示的立方体对象 cube_opti.
     g2o::cuboid cube_opti = obj_landmark->cube_vertex->estimate();
+	// 立方体 8 个顶点的坐标.
     Eigen::MatrixXd cube_corners = cube_opti.compute3D_BoxCorner();
-    
+    // std::cout << "cube_corners:   \n" << cube_corners << std::endl;
+
 	// 每个立方体需要两个 marker，一个用于所有的边缘，一个用于前面的边缘，可以具有不同的额颜色.
     for (int ii=0;ii<2;ii++) // each cuboid needs two markers!!! one for all edges, one for front facing edge, could with different color.
     {
@@ -201,7 +211,7 @@ void publish_all_poses(std::vector<tracking_frame*> all_frames,std::vector<objec
     ros::Publisher pub_truth_odompose = n.advertise<nav_msgs::Odometry>("/truth_odom_pose", 10);
     ros::Publisher pub_slam_path = n.advertise<nav_msgs::Path>( "/slam_pose_paths", 10 );
     ros::Publisher pub_truth_path = n.advertise<nav_msgs::Path>( "/truth_pose_paths", 10 );
-    ros::Publisher pub_final_opti_cube = n.advertise<visualization_msgs::MarkerArray>("/cubes_opti", 10); //最终独立的物体位姿
+    ros::Publisher pub_final_opti_cube = n.advertise<visualization_msgs::MarkerArray>("/cubes_opti", 10); //最终估计出的立方体提案.
     ros::Publisher pub_history_opti_cube = n.advertise<visualization_msgs::MarkerArray>("/cubes_opti_hist", 10); // 每次优化后的立方体路标
     ros::Publisher pub_frame_raw_cube = n.advertise<visualization_msgs::MarkerArray>("/cubes_raw_frame", 10);
     ros::Publisher pub_2d_cuboid_project = n.advertise<sensor_msgs::Image>("/cuboid_project_img", 10);
@@ -327,17 +337,20 @@ void publish_all_poses(std::vector<tracking_frame*> all_frames,std::vector<objec
 	    0,      0,     1;
     set_up_calibration(calib,480,640);
     
+	// STEP 5. 最终的立方体路标 finalcube_markers.
+	// 传入参数：优化后提案 cube_landmarks_history 向量的最后一个元素，颜色绿色.
 	// TODO finalcube_markers
     visualization_msgs::MarkerArray finalcube_markers = cuboids_to_marker(cube_landmarks_history.back(),Vector3d(0,1,0));
     
 	// 是否显示点云信息，用于可视化.
     bool show_truth_cloud = true;  // show point cloud using camera pose. for visualization purpose
         
-    pcl::PCLPointCloud2 pcd_cloud2;
+    pcl::PCLPointCloud2 pcd_cloud2;		// 好像没用到.
     
     ros::Rate loop_rate(5);  //5
     int frame_number = -1;
 
+	// STEP 6. 发布每一帧对应的消息.
     while ( n.ok() )
     {
 		frame_number++;
@@ -350,29 +363,30 @@ void publish_all_poses(std::vector<tracking_frame*> all_frames,std::vector<objec
 			pub_truth_path.publish(path_truths);
 		}
 
+		// STEP 6.1 发布最终确定的立方体模型.
 		pub_final_opti_cube.publish(finalcube_markers);
 	
 		if (frame_number<total_frame_number)
 		{
-			// NOTE 在每帧经过G20优化之后发布其立方体路标，用蓝色表示 pub_history_opti_cube.
+			// STEP 6.2 发布立方体位姿（优化前后）信息.
+			// NOTE 在每帧经过G20优化之后发布其立方体路标，用红色表示 pub_history_opti_cube.
 			if (cube_landmarks_history[frame_number]!=nullptr)
 			pub_history_opti_cube.publish(cuboids_to_marker(cube_landmarks_history[frame_number],Vector3d(1,0,0)));
-			
-			// NOTE 发布优化之前每帧中原始的立方体，用红色表示 pub_frame_raw_cube.
+			// NOTE 发布优化之前每帧中原始的立方体，用蓝色表示 pub_frame_raw_cube.
 			if (all_frame_rawcubes.size()>0 && all_frame_rawcubes[frame_number]!=nullptr)
 			pub_frame_raw_cube.publish(cuboids_to_marker(all_frame_rawcubes[frame_number],Vector3d(0,0,1)));
 
+			// STEP 6.3 发布相机位姿（估计和真实）信息.
 			// NOTE 发布该帧对应的位姿信息.
 			// 估计的位姿：pub_slam_odompose.
 			// 真实的位姿：pub_truth_odompose.
 			pub_slam_odompose.publish(all_pred_pose_odoms[frame_number]);
 			pub_truth_odompose.publish(all_truth_pose_odoms[frame_number]);
-			
 			// 输出相机在世界中的坐标.
-		    std::cout<<"Frame position x/y:   "<< frame_number <<"        "
-			                                   << all_pred_pose_odoms[frame_number].pose.pose.position.x << "  "
-											   << all_pred_pose_odoms[frame_number].pose.pose.position.y << "  "
-											   << all_pred_pose_odoms[frame_number].pose.pose.position.z << std::endl;
+		    std::cout<<"Frame position x/y/z:  "<< frame_number <<"        "
+			                                    << all_pred_pose_odoms[frame_number].pose.pose.position.x << "  "
+											    << all_pred_pose_odoms[frame_number].pose.pose.position.y << "  "
+											    << all_pred_pose_odoms[frame_number].pose.pose.position.z << std::endl;
 
 			// 将 frame_number 化为4位字符 frame_index_c
 			char frame_index_c[256];	
@@ -385,10 +399,11 @@ void publish_all_poses(std::vector<tracking_frame*> all_frames,std::vector<objec
 			std::string raw_rgb_img_name = base_folder+"raw_imgs/" + std::string(frame_index_c) + "_rgb_raw.jpg";
 			cv::Mat raw_rgb_img = cv::imread(raw_rgb_img_name, 1);
 
+			// STEP 6.4 发布点云信息.
 			// 隔帧显示点云图.
 			if (show_truth_cloud && (truth_frame_poses.rows()>0))
 			{
-				if (frame_number%2==0) // show point cloud every N frames
+				if (frame_number%4==0) // show point cloud every N frames
 				{
 					// 读取点云图 raw_depth_img 并转换格式.
 					std::string raw_depth_img_name = base_folder+"depth_imgs/" + std::string(frame_index_c) + "_depth_raw.png";
@@ -413,6 +428,8 @@ void publish_all_poses(std::vector<tracking_frame*> all_frames,std::vector<objec
 				}
 			}
 			
+			// STEP 6.5 发布原始图与提案消息.
+			// 发布带有立方体轮廓的图像，通过 pub_2d_cuboid_project 发布.
 			cv_bridge::CvImage out_image;
 			out_image.header.stamp=ros::Time::now();
 			out_image.image=cuboid_2d_proj_img;
@@ -420,9 +437,10 @@ void publish_all_poses(std::vector<tracking_frame*> all_frames,std::vector<objec
 			pub_2d_cuboid_project.publish(out_image.toImageMsg());
 		}
 		
+		// 结束可视化阶段.
 		if (frame_number==int(all_pred_pose_odoms.size()))
 		{
-			cout<<"Finish all visulialization!"<<endl;
+			cout<<"+++++++++++++Finish all visulialization!+++++++++++++"<<endl;
 		}
 		
 		ros::spinOnce();
@@ -433,7 +451,7 @@ void publish_all_poses(std::vector<tracking_frame*> all_frames,std::vector<objec
 // NOTE 在线检测模式不使用 pred_frame_objects 和 init_frame_poses.
 //     truth_frame_poses 仅使用第一帧.
 void incremental_build_graph(Eigen::MatrixXd& offline_pred_frame_objects, Eigen::MatrixXd& init_frame_poses, Eigen::MatrixXd& truth_frame_poses)
-{  
+{
 	// STEP 【1. 变量定义】
     // 设置 TUM 数据集相机内参calib.
     Eigen::Matrix3d calib; 
@@ -575,8 +593,8 @@ void incremental_build_graph(Eigen::MatrixXd& offline_pred_frame_objects, Eigen:
 	      detect_cuboid_obj.detect_cuboid(raw_rgb_img,transToWolrd,raw_2d_objs,all_lines_raw, frames_cuboids);
 	      // cuboids_2d_img：带有立方体提案的 2D 图像.
 		  currframe->cuboids_2d_img = detect_cuboid_obj.cuboids_2d_img;
-		    cv::imshow("currframe.cuboids_2d_img",currframe->cuboids_2d_img);
-		    cv::waitKey(0);
+		//   cv::imshow("currframe.cuboids_2d_img",currframe->cuboids_2d_img);
+		//   cv::waitKey(0);
 
 		  // STEP 3.6 检测到了物体，准备物体测量.
 	      has_detected_cuboid = frames_cuboids.size()>0 && frames_cuboids[0].size()>0;		// frames_cuboids[0] 第0个对象.

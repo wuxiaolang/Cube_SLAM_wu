@@ -96,9 +96,9 @@ Eigen::Matrix<T,3,3> euler_zyx_to_rot(const T& roll,const T& pitch,const T& yaw)
 template Matrix3d euler_zyx_to_rot<double>(const double&, const double&, const double&);
 template Matrix3f euler_zyx_to_rot<float>(const float&, const float&, const float&);
 
-// real_to_homo_coord()
-// 输入：pts_in
-// 输出：pts_homo_out
+// BRIEF real_to_homo_coord()
+// 输入：pts_in 3*8
+// 输出：pts_homo_out 4*8
 template <class T>
 Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> real_to_homo_coord(const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>& pts_in)
 {
@@ -140,6 +140,9 @@ Eigen::Matrix<T, Eigen::Dynamic, 1> real_to_homo_coord_vec(const Eigen::Matrix<T
 template VectorXd real_to_homo_coord_vec<double>(const VectorXd&); template VectorXf real_to_homo_coord_vec<float>(const VectorXf&);
 
 
+// BRIEF homo_to_real_coord()
+// 输入：pts_homo_in 4*8
+// 输出：pts_out 3*8
 template <class T>
 Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> homo_to_real_coord(const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>& pts_homo_in)
 {

@@ -140,13 +140,15 @@ class cuboid
       }
       
       // xyz quaternion, half_scale
-      inline Vector10d toVector() const{
-	  Vector10d v;	  
-	  v.head<7>() = pose.toVector();
-	  v.tail<3>() = scale;
-	  return v;
+      inline Vector10d toVector() const
+	  {
+			Vector10d v;	  
+			v.head<7>() = pose.toVector();
+			v.tail<3>() = scale;
+			return v;
       }
       
+	  // 物体位姿信息转换，pose + scale ——> Matrix4d res
       Matrix4d similarityTransform() const
       {
 			Matrix4d res = pose.to_homogeneous_matrix();
@@ -155,6 +157,7 @@ class cuboid
 			return res;
       }
       
+	  // NOTE 将 9 自由度的位姿信息转换成 8 个点的坐标
 	  // 立方体有 8 个角，定义 3*8 的矩阵表示其坐标 corners_body .
       // 8 corners 3*8 matrix, each row is x y z
       Matrix3Xd compute3D_BoxCorner() const
@@ -164,6 +167,10 @@ class cuboid
 			corners_body<< 1,  1, -1, -1, 1,  1, -1, -1,
 						   1, -1, -1,  1, 1, -1, -1,  1,
 						  -1, -1, -1, -1, 1,  1,  1,  1;
+			// similarityTransform 包含 4*8 的位姿
+			// corners_body 包含 3*8 的顶点坐标
+			// real_to_homo_coord  将 3*8 转换成 4*8
+			// homo_to_real_coord  将 4*8 转换成 3*8
 			Matrix3Xd corners_world = homo_to_real_coord<double>(similarityTransform()*real_to_homo_coord<double>(corners_body));
 			return corners_world;
       }
