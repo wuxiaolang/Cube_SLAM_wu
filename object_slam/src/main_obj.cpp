@@ -54,7 +54,7 @@ bool online_detect_mode;
 bool save_results_to_txt;
 cv::Mat_<float> matx_to3d_, maty_to3d_;
 
-// for converting depth image to point cloud.
+// BRIEF 将深度图转化为点云图.
 void set_up_calibration(const Eigen::Matrix3f& calibration_mat,const int im_height,const int im_width)
 {
     matx_to3d_.create(im_height, im_width);

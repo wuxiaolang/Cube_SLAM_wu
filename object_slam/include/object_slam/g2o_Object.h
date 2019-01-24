@@ -131,12 +131,14 @@ class cuboid
 			return res;
       } 
       
+	  // BRIEF 将位姿信息写成一个包含 9 个元素的向量.
       // xyz roll pitch yaw half_scale
-      inline Vector9d toMinimalVector() const{   
-	  Vector9d v;
-	  v.head<6>() = pose.toXYZPRYVector();
-	  v.tail<3>() = scale;
-	  return v;
+      inline Vector9d toMinimalVector() const
+	  {   
+			Vector9d v;
+			v.head<6>() = pose.toXYZPRYVector();
+			v.tail<3>() = scale;
+			return v;
       }
       
       // xyz quaternion, half_scale

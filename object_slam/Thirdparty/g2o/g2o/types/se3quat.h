@@ -193,17 +193,18 @@ namespace g2o {
 	    yaw = atan2(2*(qw*qz+qx*qy), 1-2*(qy*qy+qz*qz));
       }
       
-      inline Vector6d toXYZPRYVector() const{
-	double yaw, pitch, roll;
-	quat_to_euler_zyx_infuc(_r, roll, pitch, yaw);
-        Vector6d v;
-        v[0]=_t(0);
-        v[1]=_t(1);
-        v[2]=_t(2);
-        v[3]=roll;
-        v[4]=pitch;
-        v[5]=yaw;
-        return v;
+      inline Vector6d toXYZPRYVector() const
+      {
+          double yaw, pitch, roll;
+          quat_to_euler_zyx_infuc(_r, roll, pitch, yaw);
+          Vector6d v;
+          v[0]=_t(0);
+          v[1]=_t(1);
+          v[2]=_t(2);
+          v[3]=roll;
+          v[4]=pitch;
+          v[5]=yaw;
+          return v;
       }
             
       Eigen::Quaterniond zyx_euler_to_quat(const double &roll, const double &pitch, const double &yaw)
