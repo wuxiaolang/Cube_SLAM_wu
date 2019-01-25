@@ -206,7 +206,7 @@ void publish_all_poses(std::vector<tracking_frame*> all_frames,std::vector<objec
 {
 	// STEP 1.定义 ROS 消息发布器和相关变量.
     ros::NodeHandle n;
-	// 估计的和真实的相机【运动轨迹】（一次性显示）.
+	// 估计的和真实的相机【运动轨迹】
 	ros::Publisher pub_slam_path = n.advertise<nav_msgs::Path>( "/slam_pose_paths", 10 );
     ros::Publisher pub_truth_path = n.advertise<nav_msgs::Path>( "/truth_pose_paths", 10 );
 	// 估计和真实的【相机位姿】（一次性显示）.
