@@ -54,7 +54,7 @@ bool online_detect_mode;
 bool save_results_to_txt;
 cv::Mat_<float> matx_to3d_, maty_to3d_;
 
-// BRIEF 将深度图转化为点云图.
+// BRIEF 深度图转化为点云图参数.
 void set_up_calibration(const Eigen::Matrix3f& calibration_mat,const int im_height,const int im_width)
 {
     matx_to3d_.create(im_height, im_width);
@@ -175,6 +175,7 @@ visualization_msgs::MarkerArray cuboids_to_marker(object_landmark* obj_landmark,
     return plane_markers;
 }
 
+// BRIEF 将李代数表达的相机位姿 pose_Twc 转换成 geometry_msgs/Pose 消息.
 geometry_msgs::Pose posenode_to_geomsgs(const g2o::SE3Quat &pose_Twc)
 {
     geometry_msgs::Pose pose_msg;    
@@ -190,6 +191,7 @@ geometry_msgs::Pose posenode_to_geomsgs(const g2o::SE3Quat &pose_Twc)
     return pose_msg;
 }
 
+// BRIEF 将李代数表达的相机位姿 pose_Twc 加上标签 img_header 之后转换成 nav_msgs/Odometry 消息.
 nav_msgs::Odometry posenode_to_odommsgs(const g2o::SE3Quat &pose_Twc,const std_msgs::Header &img_header)
 {
     nav_msgs::Odometry odom_msg;
@@ -198,41 +200,47 @@ nav_msgs::Odometry posenode_to_odommsgs(const g2o::SE3Quat &pose_Twc,const std_m
     return odom_msg;
 }
 
-
 // BRIEF 发布每帧的原始和优化结果.
 void publish_all_poses(std::vector<tracking_frame*> all_frames,std::vector<object_landmark*> cube_landmarks_history,
 		       std::vector<object_landmark*> all_frame_rawcubes, Eigen::MatrixXd& truth_frame_poses)
 {
 	// STEP 1.定义 ROS 消息发布器和相关变量.
     ros::NodeHandle n;
-    ros::Publisher pub_slam_all_poses = n.advertise<geometry_msgs::PoseArray>("/slam_pose_array", 10);
-    ros::Publisher pub_slam_odompose = n.advertise<nav_msgs::Odometry>("/slam_odom_pose", 10);
-    ros::Publisher pub_truth_all_poses = n.advertise<geometry_msgs::PoseArray>("/truth_pose_array", 10);
-    ros::Publisher pub_truth_odompose = n.advertise<nav_msgs::Odometry>("/truth_odom_pose", 10);
-    ros::Publisher pub_slam_path = n.advertise<nav_msgs::Path>( "/slam_pose_paths", 10 );
+	// 估计的和真实的相机【运动轨迹】（一次性显示）.
+	ros::Publisher pub_slam_path = n.advertise<nav_msgs::Path>( "/slam_pose_paths", 10 );
     ros::Publisher pub_truth_path = n.advertise<nav_msgs::Path>( "/truth_pose_paths", 10 );
+	// 估计和真实的【相机位姿】（一次性显示）.
+    ros::Publisher pub_slam_all_poses = n.advertise<geometry_msgs::PoseArray>("/slam_pose_array", 10);
+    ros::Publisher pub_truth_all_poses = n.advertise<geometry_msgs::PoseArray>("/truth_pose_array", 10);
+	// 估计的和真实【相机位姿】(逐帧显示).
+    ros::Publisher pub_slam_odompose = n.advertise<nav_msgs::Odometry>("/slam_odom_pose", 10);
+    ros::Publisher pub_truth_odompose = n.advertise<nav_msgs::Odometry>("/truth_odom_pose", 10);
+	// 【立方体模型】消息，分别是：最终路标，优化后模型，优化前模型.
     ros::Publisher pub_final_opti_cube = n.advertise<visualization_msgs::MarkerArray>("/cubes_opti", 10); //最终估计出的立方体提案.
     ros::Publisher pub_history_opti_cube = n.advertise<visualization_msgs::MarkerArray>("/cubes_opti_hist", 10); // 每次优化后的立方体路标
     ros::Publisher pub_frame_raw_cube = n.advertise<visualization_msgs::MarkerArray>("/cubes_raw_frame", 10);
-    ros::Publisher pub_2d_cuboid_project = n.advertise<sensor_msgs::Image>("/cuboid_project_img", 10);
+    // 带有提案的【原始图像】.
+	ros::Publisher pub_2d_cuboid_project = n.advertise<sensor_msgs::Image>("/cuboid_project_img", 10);
+	// 【点云】消息.
     ros::Publisher raw_cloud_pub = n.advertise<CloudXYZRGB> ("/raw_point_cloud", 50);
     
     int total_frame_number = all_frames.size();
     
-    // 准备所有路径消息.
-    geometry_msgs::PoseArray all_pred_pose_array;    		// geometry_msgs/PoseArray：世界参考系下带有时间戳的位姿.
-	std::vector<nav_msgs::Odometry> all_pred_pose_odoms;	// nav_msgs/Odometry：自由空间中的位姿和速度估计.
+    // 估计的【相机位姿】.
+    geometry_msgs::PoseArray all_pred_pose_array;    		// 估计位姿，存为数组，一次行发布所有.
+	std::vector<nav_msgs::Odometry> all_pred_pose_odoms;	// 估计位姿，存为向量，逐帧发布.
 
-    geometry_msgs::PoseArray all_truth_pose_array;    
-	std::vector<nav_msgs::Odometry> all_truth_pose_odoms;
+	// 真实的【相机位姿】.
+    geometry_msgs::PoseArray all_truth_pose_array;    		// 真实位姿，存为数组，一次性发布.
+	std::vector<nav_msgs::Odometry> all_truth_pose_odoms;	// 真实位姿，存为向量，逐帧发布.
 
-	// 世界坐标系的时间戳 pose_header
+	// pose_header：指明在世界坐标系和时间戳.
     std_msgs::Header pose_header;    				// std_msgs/Header：通常用于在特定坐标系中传送带时间戳的数据.
 	pose_header.frame_id = "/world";    
 	pose_header.stamp = ros::Time::now();
 
-	// 姿态数组，包括位姿和时间戳：path_preds，path_truths.
-    nav_msgs::Path path_truths,path_preds;			// nav_msgs/Path：姿态数组，表示机器人路径.
+	// 【运动轨迹】，包括位姿和时间戳：path_preds，path_truths.
+    nav_msgs::Path path_truths,path_preds;			// nav_msgs/Path：姿态数组，表示运动轨迹.
     path_preds.header = pose_header;    
 	path_truths.header = pose_header;    
 
@@ -241,16 +249,18 @@ void publish_all_poses(std::vector<tracking_frame*> all_frames,std::vector<objec
     {
 		// cam_pose_Twc：优化之后的相机位姿.
 		// 保存优化之后的相机位姿和时间戳.
+		// 分别保存为数组（一次性发布）和向量形式（逐帧发布）.
 		all_pred_pose_array.poses.push_back(posenode_to_geomsgs(all_frames[i]->cam_pose_Twc));
-		all_pred_pose_odoms.push_back(posenode_to_odommsgs(all_frames[i]->cam_pose_Twc,pose_header) );
-		
+		all_pred_pose_odoms.push_back(posenode_to_odommsgs(all_frames[i]->cam_pose_Twc,pose_header) );	
+
+		/*NOTE 作者原始代码在这里将估计的相机位姿存放在 path_preds 中，并在后面一次性发布，我给他放到后面逐帧发布了.
 		// 位姿时间戳 postamp.
 		geometry_msgs::PoseStamped postamp;
 		postamp.pose = posenode_to_geomsgs(all_frames[i]->cam_pose_Twc);
 		postamp.header = pose_header;
-
 		// NOTE 最终将估计的位姿信息存储到 path_preds.
 		path_preds.poses.push_back(postamp);
+		*/
     }
 
 	// STEP 3.读取真实的相机位姿..
@@ -269,22 +279,22 @@ void publish_all_poses(std::vector<tracking_frame*> all_frames,std::vector<objec
 			pose_msg.orientation.z = truth_frame_poses(i,6);	
 			pose_msg.orientation.w = truth_frame_poses(i,7);
 
-			// 读取真实的相机位姿存放在 all_truth_pose_array 中.
+			// 真实位姿矩阵.
 			all_truth_pose_array.poses.push_back(pose_msg);
 
-			// 自由空间中的相机位姿 all_truth_pose_odoms.
+			// 真实位姿的里程计信息（向量）.
 			nav_msgs::Odometry odom_msg;
 			odom_msg.pose.pose=pose_msg;
 			odom_msg.header = pose_header;
 			all_truth_pose_odoms.push_back(odom_msg);
 			
-			// 时间戳 postamp.
+			/*NOTE 作者原始代码在这里将真实的相机位姿存放在 path_truths 中，并在后面一次性发布，我给他放到后面逐帧发布了.
 			geometry_msgs::PoseStamped postamp;
 			postamp.pose = pose_msg;
 			postamp.header = pose_header;
-
 			// NOTE 最终将参考系下真实的位姿信息存储到 path_truths.
 			path_truths.poses.push_back(postamp);
+			*/
 		}
     }
 
@@ -332,9 +342,9 @@ void publish_all_poses(std::vector<tracking_frame*> all_frames,std::vector<objec
     // sensor parameter for TUM cabinet data!
     Eigen::Matrix3f calib;
     float depth_map_scaling = 5000;
-    calib<<535.4,  0, 320.1,
-	    0,  539.2, 247.6,
-	    0,      0,     1;
+    calib<<535.4,      0, 320.1,
+	           0,  539.2, 247.6,
+	           0,      0,     1;
     set_up_calibration(calib,480,640);
     
 	// STEP 5. 最终的立方体路标 finalcube_markers.
@@ -355,10 +365,13 @@ void publish_all_poses(std::vector<tracking_frame*> all_frames,std::vector<objec
     {
 		frame_number++;
 	
+		// 是否直接一次性显示所有结果.
 		if (0) // directly show final results
 		{
+			// 发布估计和真实的相机位姿.
 			pub_slam_all_poses.publish(all_pred_pose_array);	
 			pub_truth_all_poses.publish(all_truth_pose_array);
+			// 发布估计和真实的运动轨迹.
 			pub_slam_path.publish(path_preds);	
 			pub_truth_path.publish(path_truths);
 		}
@@ -366,15 +379,15 @@ void publish_all_poses(std::vector<tracking_frame*> all_frames,std::vector<objec
 		// STEP 6.1 发布最终确定的立方体模型.
 		pub_final_opti_cube.publish(finalcube_markers);
 	
-		if (frame_number<total_frame_number)
+		if (frame_number < total_frame_number)
 		{
 			// STEP 6.2 发布立方体位姿（优化前后）信息.
-			// NOTE 在每帧经过G20优化之后发布其立方体路标，用红色表示 pub_history_opti_cube.
+			// NOTE 在每帧经过G20优化之后发布其立方体路标，用红色表示 pub_history_opti_cube. 
 			if (cube_landmarks_history[frame_number]!=nullptr)
-			pub_history_opti_cube.publish(cuboids_to_marker(cube_landmarks_history[frame_number],Vector3d(1,0,0)));
+				pub_history_opti_cube.publish(cuboids_to_marker(cube_landmarks_history[frame_number],Vector3d(1, 0, 0)));
 			// NOTE 发布优化之前每帧中原始的立方体，用蓝色表示 pub_frame_raw_cube.
 			if (all_frame_rawcubes.size()>0 && all_frame_rawcubes[frame_number]!=nullptr)
-			pub_frame_raw_cube.publish(cuboids_to_marker(all_frame_rawcubes[frame_number],Vector3d(0,0,1)));
+				pub_frame_raw_cube.publish(cuboids_to_marker(all_frame_rawcubes[frame_number],Vector3d(0,0,1)));
 
 			// STEP 6.3 发布相机位姿（估计和真实）信息.
 			// NOTE 发布该帧对应的位姿信息.
@@ -435,6 +448,22 @@ void publish_all_poses(std::vector<tracking_frame*> all_frames,std::vector<objec
 			out_image.image=cuboid_2d_proj_img;
 			out_image.encoding=sensor_msgs::image_encodings::TYPE_8UC3;
 			pub_2d_cuboid_project.publish(out_image.toImageMsg());
+
+			// TODO 逐帧发布估计的轨迹 path_preds.
+			geometry_msgs::PoseStamped postamp;
+			postamp.pose = posenode_to_geomsgs(all_frames[frame_number]->cam_pose_Twc);
+			postamp.header = pose_header;
+			path_preds.poses.push_back(postamp);
+			// 发布.
+			pub_slam_path.publish(path_preds);
+
+			// TODO 逐帧发布真实的轨迹 path_truths.
+			geometry_msgs::PoseStamped postamp2;
+			postamp2.pose = all_truth_pose_array.poses[frame_number];
+			postamp2.header = pose_header;
+			path_truths.poses.push_back(postamp2);
+			// 发布.
+			pub_truth_path.publish(path_truths);
 		}
 		
 		// 结束可视化阶段.
@@ -593,8 +622,8 @@ void incremental_build_graph(Eigen::MatrixXd& offline_pred_frame_objects, Eigen:
 	      detect_cuboid_obj.detect_cuboid(raw_rgb_img,transToWolrd,raw_2d_objs,all_lines_raw, frames_cuboids);
 	      // cuboids_2d_img：带有立方体提案的 2D 图像.
 		  currframe->cuboids_2d_img = detect_cuboid_obj.cuboids_2d_img;
-		//   cv::imshow("currframe.cuboids_2d_img",currframe->cuboids_2d_img);
-		//   cv::waitKey(0);
+		  cv::imshow("currframe.cuboids_2d_img",currframe->cuboids_2d_img);
+		  cv::waitKey(0);
 
 		  // STEP 3.6 检测到了物体，准备物体测量.
 	      has_detected_cuboid = frames_cuboids.size()>0 && frames_cuboids[0].size()>0;		// frames_cuboids[0] 第0个对象.
