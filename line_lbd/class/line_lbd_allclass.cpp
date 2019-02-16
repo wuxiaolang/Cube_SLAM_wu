@@ -214,11 +214,13 @@ void line_lbd_detect::detect_filter_lines(const cv::Mat& gray_img, std::vector< 
     filter_lines(keylines_raw,keylines_out);
 }
 
-
+// 线检测第一步
+// 参数：原始图像，边缘矩阵
 void line_lbd_detect::detect_filter_lines(const cv::Mat& gray_img, cv::Mat& linesmat_out)
 {
-    std::vector< KeyLine> keylines;
-    detect_filter_lines(gray_img,keylines);
+    // 定义线特征 keylines
+    std::vector<KeyLine> keylines;
+    detect_filter_lines(gray_img,keylines);         // 跳转到上面的detect_filter_lines()
     keylines_to_mat(keylines,linesmat_out,1);       // 将 vector< KeyLine> 格式转换成 cv::mat 格式.
 }
 

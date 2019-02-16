@@ -40,13 +40,10 @@
 
 #include "line_lbd/line_lbd_allclass.h"
 
-
 using namespace std;
 using namespace Eigen;
 
-
 typedef pcl::PointCloud<pcl::PointXYZRGB> CloudXYZRGB;
-
 
 // global variable
 std::string base_folder;
@@ -590,10 +587,11 @@ void incremental_build_graph(Eigen::MatrixXd& offline_pred_frame_objects, Eigen:
 	      // STEP 3.1 开始检测，读取rgb图像到 raw_rgb_img.
 	      cv::Mat raw_rgb_img = cv::imread(base_folder+"raw_imgs/"+frame_index_c+"_rgb_raw.jpg", 1);
 	    
-	      // STEP 3.2 边缘线检测.
+	      // STEP 3.2 【边缘线检测】.
 		  // @PARAM all_lines_raw 边缘线存储的矩阵.
-	      cv::Mat all_lines_mat;
+	      cv::Mat all_lines_mat;	// TODO all_lines_mat存储的什么信息？？
 	      line_lbd_obj.detect_filter_lines(raw_rgb_img, all_lines_mat);
+
 	      Eigen::MatrixXd all_lines_raw(all_lines_mat.rows,4);		// TODO这里的4是什么，4条线吗？？
 	      for (int rr=0;rr<all_lines_mat.rows;rr++)
 				for (int cc=0;cc<4;cc++)
