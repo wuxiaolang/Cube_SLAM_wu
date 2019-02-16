@@ -209,7 +209,7 @@ Ptr<BinaryDescriptor> BinaryDescriptor::createBinaryDescriptor()
   return Ptr < BinaryDescriptor > ( new BinaryDescriptor() );
 }
 
-Ptr<BinaryDescriptor> BinaryDescriptor::createBinaryDescriptor( Params parameters )
+Ptr<BinaryDescriptor> BinaryDescriptor::createBinaryDescriptor(Params parameters)
 {
   return Ptr < BinaryDescriptor > ( new BinaryDescriptor( parameters ) );
 }
@@ -416,6 +416,8 @@ unsigned char BinaryDescriptor::binaryConversion( float* f1, float* f2 )
 }
 
 /* requires line detection (only one image) */
+// NOTE 
+// 参数 image  keylines   mask
 void BinaryDescriptor::detect( const Mat& image, CV_OUT std::vector<KeyLine>& keylines, const Mat& mask )
 {
   std::vector<std::vector<KeyLine>> keyline_octaves;
@@ -480,6 +482,7 @@ void BinaryDescriptor::detect( const std::vector<Mat>& images, std::vector<std::
   }
 }
 
+// 线检测功能实现函数.
 void BinaryDescriptor::detectImpl( const Mat& imageSrc, std::vector<KeyLine>& keylines, std::vector<std::vector<KeyLine>>& keyline_octaves,
 				   const Mat& mask ) const
 {
@@ -545,43 +548,44 @@ if (params.save_octave_line)
       kl.class_id = ++(octave_class_coutner[kl.octave]);
       /* store KeyLine */
       if (params.save_octave_line)
-	  keyline_octaves[kl.octave].push_back(kl);      
+	        keyline_octaves[kl.octave].push_back(kl);      
       else
-	  keylines.push_back( kl );
+	        keylines.push_back( kl );
     }
   } 
+
+  // 根据输入的掩膜，删除不需要的 KeyLines.
   /* delete undesired KeyLines, according to input mask */
   if( !mask.empty() )
   {
-    if (!params.save_octave_line)
-    {
-      for ( size_t keyCounter = 0; keyCounter < keylines.size(); keyCounter++ )
+      if (!params.save_octave_line)
       {
-	KeyLine kl = keylines[keyCounter];
-	if( mask.at<uchar>( (int) kl.startPointY, (int) kl.startPointX ) == 0 && mask.at<uchar>( (int) kl.endPointY, (int) kl.endPointX ) == 0 )
-	{
-	  keylines.erase( keylines.begin() + keyCounter );
-	  keyCounter--;
-	}
+          for ( size_t keyCounter = 0; keyCounter < keylines.size(); keyCounter++ )
+          {
+              KeyLine kl = keylines[keyCounter];
+              if( mask.at<uchar>((int)kl.startPointY, (int)kl.startPointX) == 0 && mask.at<uchar>((int)kl.endPointY, (int)kl.endPointX) == 0 )
+              {
+                  keylines.erase( keylines.begin() + keyCounter );
+                  keyCounter--;
+              }
+          }
       }
-    }
-    else
-    {
-      for (int oct=0;oct<params.numOfOctave_;oct++)
-	for ( size_t keyCounter = 0; keyCounter < keyline_octaves[oct].size(); keyCounter++ )
-	{
-	  KeyLine kl = keyline_octaves[oct][keyCounter];
-	  if( mask.at<uchar>( (int) kl.startPointY, (int) kl.startPointX ) == 0 && mask.at<uchar>( (int) kl.endPointY, (int) kl.endPointX ) == 0 )
-	  {
-	    keyline_octaves[oct].erase( keyline_octaves[oct].begin() + keyCounter );
-	    keyCounter--;
-	  }
-	}	
-    }
-  }    
+      else
+      {
+          for (int oct=0;oct<params.numOfOctave_;oct++)
+            for ( size_t keyCounter = 0; keyCounter < keyline_octaves[oct].size(); keyCounter++ )
+            {
+                KeyLine kl = keyline_octaves[oct][keyCounter];
+                if( mask.at<uchar>( (int) kl.startPointY, (int) kl.startPointX ) == 0 && mask.at<uchar>( (int) kl.endPointY, (int) kl.endPointX ) == 0 )
+                {
+                    keyline_octaves[oct].erase( keyline_octaves[oct].begin() + keyCounter );
+                    keyCounter--;
+                }
+            }
+      }
+  }
   
-//   std::cout<<"done detect  "<<params.save_octave_line<<std::endl;
-
+  std::cout<<"done detect  "<< params.save_octave_line<<std::endl;
 }
 
 /* requires descriptors computation (only one image) */

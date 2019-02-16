@@ -589,14 +589,27 @@ void incremental_build_graph(Eigen::MatrixXd& offline_pred_frame_objects, Eigen:
 	    
 	      // STEP 3.2 【边缘线检测】.
 		  // @PARAM all_lines_raw 边缘线存储的矩阵.
-	      cv::Mat all_lines_mat;	// TODO all_lines_mat存储的什么信息？？
+	      cv::Mat all_lines_mat;	// 检测到的线段信息，cv::Mat格式.
 	      line_lbd_obj.detect_filter_lines(raw_rgb_img, all_lines_mat);
 
+		  // 将 all_lines_mat 存储到 all_lines_raw 中.
 	      Eigen::MatrixXd all_lines_raw(all_lines_mat.rows,4);		// TODO这里的4是什么，4条线吗？？
 	      for (int rr=0;rr<all_lines_mat.rows;rr++)
 				for (int cc=0;cc<4;cc++)
-		  all_lines_raw(rr,cc) = all_lines_mat.at<float>(rr,cc);
-	      
+		  			all_lines_raw(rr,cc) = all_lines_mat.at<float>(rr,cc);
+					/*
+					std::cout << "all_lines_raw \n" << all_lines_raw << std::endl;
+					518.164  179.13     533      46
+					453.637 371.208   516.2 180.066
+					285.62 322.261 451.626 372.243
+					290.387 120.984 285.264 319.981
+					384.164 22.1538 291.708 120.726
+					514.869 171.607 290.926 123.344
+					380.963  167.12 398.815 172.601
+					381.094 202.619 395.935 206.264
+					397.868 176.387 379.907 170.274
+					*/
+
 		  // STEP 3.3 读取 yolo 2D 目标检测.
 	      //read cleaned yolo 2d object detection
 	      Eigen::MatrixXd raw_2d_objs(10,5);  // 每帧 5 个参数：2D检测框[x1 y1 width height], 和概率. TODO 
@@ -825,7 +838,7 @@ void incremental_build_graph(Eigen::MatrixXd& offline_pred_frame_objects, Eigen:
 }
 
 // BRIEF
-int main(int argc,char* argv[])
+int main(int argc, char* argv[])
 {
 	// STEP 【1 ：初始化参数.】
     // 初始化节点与命名空间.

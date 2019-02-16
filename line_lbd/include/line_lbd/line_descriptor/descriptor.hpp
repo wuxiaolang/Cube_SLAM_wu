@@ -129,6 +129,7 @@ struct CV_EXPORTS KeyLine
   /** minimum area containing line, in original image space */
   float size;
   
+  // 原始图像空间中线段的两个短点的坐标.
   float startPointX; /** lines's extremes in original image space */
   float startPointY; /** lines's extremes in original image space */
   float endPointX;  /** lines's extremes in original image space */

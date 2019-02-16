@@ -129,23 +129,23 @@ line_lbd_detect::line_lbd_detect(int numoctaves,float octaveratio): numoctaves_(
 // 线检测函数.
 void line_lbd_detect::detect_raw_lines(const cv::Mat& gray_img, std::vector< KeyLine>& keylines_out)
 {
-   if (use_LSD)
-   {
-      LSDDetector::LSDOptions opts;   // lsd parameters  see Stvo-PL  I actually didn't use it.
-      opts.refine       = 0;      opts.scale        = 0;
-      opts.sigma_scale  = 0;      opts.quant        = 0;
-      opts.ang_th       = 0;      opts.log_eps      = 0;
-      opts.density_th   = 0;      opts.n_bins       = 0;
-      opts.min_length   = 0;   
-          
-      lsd->detect( gray_img, keylines_out, octaveratio_, numoctaves_,opts);  // seems different from my LSD.  already removed boundary lines
-       std::cout<<"lsd edge size "<<keylines_out.size()<<std::endl;
+    if (use_LSD)
+    {
+        LSDDetector::LSDOptions opts;   // lsd parameters  see Stvo-PL  I actually didn't use it.
+        opts.refine       = 0;      opts.scale        = 0;
+        opts.sigma_scale  = 0;      opts.quant        = 0;
+        opts.ang_th       = 0;      opts.log_eps      = 0;
+        opts.density_th   = 0;      opts.n_bins       = 0;
+        opts.min_length   = 0;   
+            
+        lsd->detect( gray_img, keylines_out, octaveratio_, numoctaves_,opts);  // seems different from my LSD.  already removed boundary lines
+        std::cout<<"lsd edge size "<<keylines_out.size()<<std::endl;
+        }
+    else 
+    {
+        cv::Mat mask1 = Mat::ones( gray_img.size(), CV_8UC1 );      // Mat::ones 返回一个指定大小和类型的全为1的数组
+        lbd->detect( gray_img, keylines_out, mask1 );
     }
-  else 
-  {
-      cv::Mat mask1 = Mat::ones( gray_img.size(), CV_8UC1 );  
-      lbd->detect( gray_img, keylines_out, mask1 );
-  }
 }
 
 
@@ -199,23 +199,25 @@ void line_lbd_detect::get_line_descriptors(const cv::Mat& gray_img, const cv::Ma
 
 void line_lbd_detect::filter_lines(std::vector< KeyLine>& keylines_in,std::vector< KeyLine>& keylines_out)
 {  
-  keylines_out.clear();  
-  for ( int i = 0; i < (int) keylines_in.size(); i++ )   // keep octave 0, and remove short lines
-    if( keylines_in[i].octave == 0 )
-      if (keylines_in[i].lineLength>line_length_thres)
-	  keylines_out.push_back( keylines_in[i] );
+    // 删除短线.
+    keylines_out.clear();  
+    for ( int i = 0; i < (int) keylines_in.size(); i++ )   // keep octave 0, and remove short lines
+        if( keylines_in[i].octave == 0 )
+            if (keylines_in[i].lineLength>line_length_thres)
+                keylines_out.push_back( keylines_in[i] );
 }
 
-
+// 参数：原始图像，线特征
 void line_lbd_detect::detect_filter_lines(const cv::Mat& gray_img, std::vector< KeyLine>& keylines_out)
 {
-    std::vector< KeyLine> keylines_raw;
+    std::vector<KeyLine> keylines_raw;
     detect_raw_lines(gray_img,keylines_raw);
     filter_lines(keylines_raw,keylines_out);
 }
 
 // 线检测第一步
-// 参数：原始图像，边缘矩阵
+// 输入：原始图像
+// 输出：图像的边缘矩阵
 void line_lbd_detect::detect_filter_lines(const cv::Mat& gray_img, cv::Mat& linesmat_out)
 {
     // 定义线特征 keylines
