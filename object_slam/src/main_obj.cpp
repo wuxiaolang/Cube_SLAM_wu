@@ -593,7 +593,7 @@ void incremental_build_graph(Eigen::MatrixXd& offline_pred_frame_objects, Eigen:
 	      line_lbd_obj.detect_filter_lines(raw_rgb_img, all_lines_mat);
 
 		  // 将 all_lines_mat 存储到 all_lines_raw 中.
-	      Eigen::MatrixXd all_lines_raw(all_lines_mat.rows,4);		// TODO这里的4是什么，4条线吗？？
+	      Eigen::MatrixXd all_lines_raw(all_lines_mat.rows,4);		// TODO这里的4是什么，线段的两个端点，每个点的xy坐标.
 	      for (int rr=0;rr<all_lines_mat.rows;rr++)
 				for (int cc=0;cc<4;cc++)
 		  			all_lines_raw(rr,cc) = all_lines_mat.at<float>(rr,cc);
@@ -609,6 +609,7 @@ void incremental_build_graph(Eigen::MatrixXd& offline_pred_frame_objects, Eigen:
 					381.094 202.619 395.935 206.264
 					397.868 176.387 379.907 170.274
 					*/
+		      // 绘制线段 keylines_out 到 raw_img_cp 图像中. 
 
 		  // STEP 3.3 读取 yolo 2D 目标检测.
 	      //read cleaned yolo 2d object detection

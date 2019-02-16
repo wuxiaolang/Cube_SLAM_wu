@@ -223,6 +223,14 @@ void line_lbd_detect::detect_filter_lines(const cv::Mat& gray_img, cv::Mat& line
     // 定义线特征 keylines
     std::vector<KeyLine> keylines;
     detect_filter_lines(gray_img,keylines);         // 跳转到上面的detect_filter_lines()
+
+    /* 绘制线段在原图上
+    cv::Mat gray_img2;
+    drawKeylines(gray_img, keylines, gray_img2, cv::Scalar( 0, 150, 0 ),2); // B G R
+    imshow( "Line detector", gray_img2);
+    waitKey();
+    */
+   
     keylines_to_mat(keylines,linesmat_out,1);       // 将 vector< KeyLine> 格式转换成 cv::mat 格式.
 }
 

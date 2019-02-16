@@ -1,13 +1,13 @@
 <!-- -->
 <launch>
-
-   <node pkg="line_lbd" type="linelbd_detect_node" name="linelbd_detect_node"  output="screen" 
-		args="$(find line_lbd)/data/cabinet.png">
+   <!-- 节点所在包名：line_lbd；节点类型：linelbd_detect_node；节点名：linelbd_detect_node；输出信息在屏幕 -->
+   <node pkg="line_lbd" type="linelbd_detect_node" name="linelbd_detect_node"  output="screen"
+		args="$(find line_lbd)/data/407.jpg">    <!--cabinet.png  407.jpg-->
    </node>
 
    <param name="save_folder" value ="$(find line_lbd)/data/"/>
-   <param name="use_LSD_algorithm" value="true"/>  # true, false   LSD or Edline detector.
-   <param name="save_to_imgs" value="false"/>
-   <param name="save_to_txts" value="false"/>
+   <param name="use_LSD_algorithm" value="true"/>  # true（默认）, false  LSD or Edline detector.
+   <param name="save_to_imgs" value="true"/>   <!--默认为false-->
+   <param name="save_to_txts" value="true"/>   <!--默认为false-->
 
 </launch>
