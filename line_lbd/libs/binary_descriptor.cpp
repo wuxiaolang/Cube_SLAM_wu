@@ -585,7 +585,7 @@ if (params.save_octave_line)
       }
   }
   
-  std::cout<<"done detect  "<< params.save_octave_line<<std::endl;
+  // std::cout<<"done detect  "<< params.save_octave_line<<std::endl;
 }
 
 /* requires descriptors computation (only one image) */

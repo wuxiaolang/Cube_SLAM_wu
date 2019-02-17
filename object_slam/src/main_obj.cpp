@@ -609,17 +609,16 @@ void incremental_build_graph(Eigen::MatrixXd& offline_pred_frame_objects, Eigen:
 					381.094 202.619 395.935 206.264
 					397.868 176.387 379.907 170.274
 					*/
-		      // 绘制线段 keylines_out 到 raw_img_cp 图像中. 
 
 		  // STEP 3.3 读取 yolo 2D 目标检测.
 	      //read cleaned yolo 2d object detection
 	      Eigen::MatrixXd raw_2d_objs(10,5);  // 每帧 5 个参数：2D检测框[x1 y1 width height], 和概率. TODO 
 	      if (!read_all_number_txt(base_folder+"/filter_2d_obj_txts/"+frame_index_c+"_yolo2_0.15.txt", raw_2d_objs))
 		  		return;
-		//   else 
-		//   		std::cout << "yolo:" << "\n" << raw_2d_objs << std::endl;
-	      raw_2d_objs.leftCols<2>().array() -=1;   // 将matlab的坐标换成c++，减1；change matlab coordinate to c++, minus 1
-	      
+		  else 
+		  		std::cout << "yolo:" << "\n" << raw_2d_objs << std::endl;		// 输出该帧的 yolo 检测框信息.
+	      raw_2d_objs.leftCols<2>().array() -=1;   // 将matlab的坐标换成c++，x y各减1；change matlab coordinate to c++, minus 1
+
 		  // STEP 3.4 将当前帧的李代数表示的位姿转换成Eigen的变换矩阵.
 	      Matrix4d transToWolrd;
 	      detect_cuboid_obj.whether_sample_cam_roll_pitch = (frame_index!=0); // 第一帧可以不用采样相机位姿，也可以采样，不重要；first frame doesn't need to sample cam pose. could also sample. doesn't matter much
@@ -634,6 +633,9 @@ void incremental_build_graph(Eigen::MatrixXd& offline_pred_frame_objects, Eigen:
 	      detect_cuboid_obj.detect_cuboid(raw_rgb_img,transToWolrd,raw_2d_objs,all_lines_raw, frames_cuboids);
 	      // cuboids_2d_img：带有立方体提案的 2D 图像.
 		  currframe->cuboids_2d_img = detect_cuboid_obj.cuboids_2d_img;
+
+		  cvNamedWindow("currframe.cuboids_2d_img");
+		  cvMoveWindow("currframe.cuboids_2d_img", 20, 500);
 		  cv::imshow("currframe.cuboids_2d_img",currframe->cuboids_2d_img);
 		  cv::waitKey(0);
 

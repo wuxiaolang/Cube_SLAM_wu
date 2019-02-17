@@ -357,7 +357,7 @@ void print_vector(const std::vector<T>& vec)
 }
 template void print_vector(const std::vector<double>&);template void print_vector(const std::vector<float>&);template void print_vector(const std::vector<int>&);
 
-
+// BRIEF linespace()函数从 a 到 b 以步长 c 产生采样的 d.
 template <class T>
 void linespace(T starting, T ending, T step, std::vector<T>& res) {
     res.reserve((ending-starting)/step+2);

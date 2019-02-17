@@ -41,6 +41,7 @@ void detect_3d_cuboid::set_calibration(const Matrix3d& Kalib)
       cam_pose.invK = Kalib.inverse();
 }
 
+// BRIEF 相机位姿：将 Matrix4d 表示的相机位姿转换成自定义的 cam_pose_infos 位姿结构体.
 void detect_3d_cuboid::set_cam_pose(const Matrix4d& transToWolrd)
 {
       cam_pose.transToWolrd = transToWolrd;
@@ -62,89 +63,160 @@ void detect_3d_cuboid::set_cam_pose(const Matrix4d& transToWolrd)
    输出：立方体提案 all_object_cuboids
 */
 void detect_3d_cuboid::detect_cuboid(const cv::Mat& rgb_img, const Matrix4d& transToWolrd, const MatrixXd& obj_bbox_coors,
-				     MatrixXd all_lines_raw, std::vector<ObjectSet>& all_object_cuboids)
+				     				 MatrixXd all_lines_raw, std::vector<ObjectSet>& all_object_cuboids)
 {
-      set_cam_pose(transToWolrd);
-      cam_pose_raw = cam_pose;
-      
-      cv::Mat gray_img; 
-      if (rgb_img.channels()==3)
-	  cv::cvtColor(rgb_img, gray_img, CV_BGR2GRAY);
-      else
-	  gray_img = rgb_img;
-      
-      int img_width = rgb_img.cols;  int img_height = rgb_img.rows;
+	// TODO:
+	typedef cv::Point_<int> Point2i;
+	std::vector<Point2i> points;
+	cv::Mat image_point = rgb_img;
 
-      int num_2d_objs = obj_bbox_coors.rows();
-      all_object_cuboids.resize(num_2d_objs);
+	// 读取相机位姿，将 Matrix4d 表示的相机位姿转换成自定义的 cam_pose_infos 位姿结构体格式.
+    set_cam_pose(transToWolrd);
+    cam_pose_raw = cam_pose;	// 先保存一份位姿信息在 cam_pose_raw 中.
 
-      vector<bool> all_configs;all_configs.push_back(consider_config_1);all_configs.push_back(consider_config_2);
-      
-      // parameters for cuboid generation
-      double vp12_edge_angle_thre = 15; double vp3_edge_angle_thre = 10;  // 10  10  parameters
-      double shorted_edge_thre = 20;  // if box edge are too short. box might be too thin. most possibly wrong.
-      bool reweight_edge_distance = true;  // if want to compare with all configurations. we need to reweight
-      
-      // parameters for proposal scoring
-      bool whether_normalize_two_errors = true; double weight_vp_angle = 0.8; double weight_skew_error = 1.5; 
-      // if also consider config2, need to weight two erros, in order to compare two configurations
+	// 转换成灰度图.
+    cv::Mat gray_img; 
+    if (rgb_img.channels()==3)
+	  	cv::cvtColor(rgb_img, gray_img, CV_BGR2GRAY);
+    else
+	  	gray_img = rgb_img;
 
-      
-      align_left_right_edges(all_lines_raw); // this should be guaranteed when detecting edges
-      if(whether_plot_detail_images)
-      {
-	  cv::Mat output_img;  plot_image_with_edges(rgb_img, output_img, all_lines_raw, cv::Scalar(255,0,0));
-	  cv::imshow("Raw detected Edges", output_img);	 //cv::waitKey(0);
-      }
-      
-      // find ground-wall boundary edges
-      Vector4d ground_plane_world(0,0,1,0);  // treated as column vector % in my pop-up code, I use [0 0 -1 0]. here I want the normal pointing innerwards, towards the camera to match surface normal prediction
-      Vector4d ground_plane_sensor = cam_pose.transToWolrd.transpose()*ground_plane_world;
-      
+	// 读取图像大小.
+    int img_width = rgb_img.cols;  
+	int img_height = rgb_img.rows;
 
-//       int object_id=1;
-      for (int object_id=0;object_id<num_2d_objs;object_id++)
-      {
-// 	  std::cout<<"object id  "<<object_id<<std::endl;
-	  ca::Profiler::tictoc("One 3D object total time"); 
-	  int left_x_raw = obj_bbox_coors(object_id,0); int top_y_raw = obj_bbox_coors(object_id,1); 
-	  int obj_width_raw = obj_bbox_coors(object_id,2); int obj_height_raw = obj_bbox_coors(object_id,3);
-	  int right_x_raw = left_x_raw+obj_bbox_coors(object_id,2); int down_y_raw = top_y_raw + obj_height_raw;
+	// 读取检测框的行数，也即图像帧数.
+    int num_2d_objs = obj_bbox_coors.rows();
+    all_object_cuboids.resize(num_2d_objs);
 
-	  std::vector<int> down_expand_sample_all;
-	  down_expand_sample_all.push_back(0);
-	  if (whether_sample_bbox_height)  // 2D object detection might not be accurate
-	  {
-	      int down_expand_sample_ranges = max(min(20, obj_height_raw-90),20);
-	      down_expand_sample_ranges = min(down_expand_sample_ranges,img_height-top_y_raw-obj_height_raw-1);  // should lie inside the image  -1 for c++ index
-	      if (down_expand_sample_ranges>10)  // if expand large margin, give more samples.
-		  down_expand_sample_all.push_back(round(down_expand_sample_ranges/2));
-	      down_expand_sample_all.push_back(down_expand_sample_ranges);
-	  }
+	// TODO：这个参数是什么作用？
+    vector<bool> all_configs;
+	all_configs.push_back(consider_config_1);
+	all_configs.push_back(consider_config_2);
+
+    // TODO：立方体提案生成的一些参数.
+    double vp12_edge_angle_thre = 15; 
+	double vp3_edge_angle_thre = 10;  		// 10  10  parameters
+    double shorted_edge_thre = 20;  		// 边的阈值.if box edge are too short. box might be too thin. most possibly wrong.
+    bool reweight_edge_distance = true;  	// if want to compare with all configurations. we need to reweight
+
+    // 提案评分的参数.
+    bool whether_normalize_two_errors = true; 	// 是否归一化误差？
+	double weight_vp_angle = 0.8; 				// NOTE 角度对齐误差的权重，训练的经验值，论文中为 0.7.
+	double weight_skew_error = 1.5; 				// NOTE 形状误差的权重，训练的经验值，论文中为 1.5.
+    // TODO：if also consider config2, need to weight two erros, in order to compare two configurations
+
+    // TODO：确保边缘线段从左到右？
+    align_left_right_edges(all_lines_raw); // this should be guaranteed when detecting edges
+	// 显示边缘检测的图.
+    if(whether_plot_detail_images)
+    {
+		cv::Mat output_img;  
+		// NOTE plot_image_with_edges() 函数绘制线段.
+		plot_image_with_edges(rgb_img, output_img, all_lines_raw, cv::Scalar(255,0,0));
+		cv::imshow("Raw detected Edges", output_img);	 //cv::waitKey(0);
+    }
+    
+    // NOTE find ground-wall boundary edges
+	// 作为列向量处理，在 pop up 中，使用的是 [0 0 -1 0]，在这里，希望法线指向内部，朝向相机以匹配表面法线预测
+    Vector4d ground_plane_world(0,0,1,0);  // treated as column vector % in my pop-up code, I use [0 0 -1 0]. here I want the normal pointing innerwards, towards the camera to match surface normal prediction
+	Vector4d ground_plane_sensor = cam_pose.transToWolrd.transpose()*ground_plane_world;
+	// TODO：ground_plane_world 和 ground_plane_sensor.
+
+	// 逐帧处理.
+	//int object_id=1;
+    for (int object_id = 0; object_id < num_2d_objs; object_id++)
+    {
+		//std::cout<<"object id  "<<object_id<<std::endl;
+		// 计时？
+		ca::Profiler::tictoc("One 3D object total time"); 
+
+		// 读取YOLO边界框的左上角点的坐标 x y 和长宽.
+		int left_x_raw = obj_bbox_coors(object_id,0); 
+		int top_y_raw = obj_bbox_coors(object_id,1); 
+		int obj_width_raw = obj_bbox_coors(object_id,2); 
+		int obj_height_raw = obj_bbox_coors(object_id,3);
+		// 计算右下角点的坐标.
+		int right_x_raw = left_x_raw+obj_bbox_coors(object_id,2); 
+		int down_y_raw = top_y_raw + obj_height_raw;
+
+		// NOTE 绘制检测框.
+		rectangle(	rgb_img,
+					cv::Point(left_x_raw, top_y_raw),     
+        			cv::Point(right_x_raw, down_y_raw),  
+					cv::Scalar(0,255,255), 
+					2,   
+					8);
+
+		// @PARAM down_expand_sample_all
+		std::vector<int> down_expand_sample_all;
+		down_expand_sample_all.push_back(0);											// 0.
+		// TODO：2D 目标检测可能不准确，是否采样物体高度？？ 如果不采样 down_expand_sample_all.size()=1，采样则为3.
+		if (whether_sample_bbox_height)  // 2D object detection might not be accurate
+		{
+			int down_expand_sample_ranges = max(min(20, obj_height_raw-90),20);
+			down_expand_sample_ranges = min(down_expand_sample_ranges, img_height - top_y_raw - obj_height_raw-1);  // should lie inside the image  -1 for c++ index
+																	// 图像高度 - 边界框左上角y轴坐标 - 检测框高度 - 1
+			// 如果扩大边界，则提供更多样本.
+			if (down_expand_sample_ranges > 10)  // if expand large margin, give more samples.
+				down_expand_sample_all.push_back(round(down_expand_sample_ranges/2));	// 10.
+				down_expand_sample_all.push_back(down_expand_sample_ranges);			// 20.
+		}
+		// for(int i=0; i<down_expand_sample_all.size(); i++)
+        //     std::cout << down_expand_sample_all[i] << " " ;
+		// down_expand_sample_all: 0 10 20
 	  
-	  // NOTE later if in video, could use previous object yaw..., also reduce search range
-	  double yaw_init = cam_pose.camera_yaw-90.0/180.0*M_PI;  // yaw init is directly facing the camera, align with camera optical axis	  
-	  std::vector<double> obj_yaw_samples; linespace<double>(yaw_init-45.0/180.0*M_PI, yaw_init+45.0/180.0*M_PI, 6.0/180.0*M_PI, obj_yaw_samples);
+		// NOTE later if in video, could use previous object yaw..., also reduce search range
+		// @PARAM 【偏航角】初始化为面向相机，与相机光轴对齐.
+		double yaw_init = cam_pose.camera_yaw - 90.0 / 180.0 * M_PI;  // yaw init is directly facing the camera, align with camera optical axis	  
 
-	  MatrixXd all_configs_errors(400,9); MatrixXd all_box_corners_2ds(800,8); // initialize a large eigen matrix
-	  int valid_config_number_all_height=0; // all valid objects of all height samples
-	  ObjectSet raw_obj_proposals;raw_obj_proposals.reserve(100);
+		// 偏航角采样
+		std::vector<double> obj_yaw_samples; 
+		// BRIEF linespace()函数从 a 到 b 以步长 c 产生采样的 d.
+		linespace<double>(yaw_init - 45.0/180.0*M_PI, yaw_init + 45.0/180.0*M_PI, 6.0/180.0*M_PI, obj_yaw_samples);
+
+		MatrixXd all_configs_errors(400,9); 
+		MatrixXd all_box_corners_2ds(800,8); 	// initialize a large eigen matrix
+		int valid_config_number_all_height=0; 	// 高度样本的有效对象.all valid objects of all height samples
+		
+		// @PARAM 一系列立方体序列 raw_obj_proposals
+		ObjectSet raw_obj_proposals;
+		raw_obj_proposals.reserve(100);		// 序列长度为 100.
+
+		// 循环 1 次或 3 次.
 // 	    int sample_down_expan_id=1;
-	  for (int sample_down_expan_id=0;sample_down_expan_id<down_expand_sample_all.size();sample_down_expan_id++)
-	  {
-	      int down_expand_sample = down_expand_sample_all[sample_down_expan_id];
-	      int obj_height_expan = obj_height_raw + down_expand_sample;
-	      int down_y_expan = top_y_raw + obj_height_expan; double obj_diaglength_expan = sqrt(obj_width_raw*obj_width_raw+obj_height_expan*obj_height_expan);
-	      
-	      // sample points on the top edges, if edge is too large, give more samples. give at least 10 samples for all edges. for small object, object pose changes lots    
-	      int top_sample_resolution = round(min(20,obj_width_raw/10 )); //  25 pixels
-	      std::vector<int> top_x_samples; linespace<int>(left_x_raw+5, right_x_raw-5, top_sample_resolution, top_x_samples);
-	      MatrixXd sample_top_pts(2,top_x_samples.size());
-	      for (int ii=0;ii<top_x_samples.size();ii++)
-	      {
-		  sample_top_pts(0,ii)=top_x_samples[ii];
-		  sample_top_pts(1,ii)=top_y_raw;
-	      }
+		for (int sample_down_expan_id = 0; sample_down_expan_id < down_expand_sample_all.size(); sample_down_expan_id++)
+		{
+			int down_expand_sample = down_expand_sample_all[sample_down_expan_id]; 	// = 0 ,10 或 20 
+			// 高度检测框的高度.
+			int obj_height_expan = obj_height_raw + down_expand_sample;				
+			int down_y_expan = top_y_raw + obj_height_expan; 					
+			// 宽度没变，高度变高了，求取对角线的长度.		
+			double obj_diaglength_expan = sqrt(obj_width_raw*obj_width_raw+obj_height_expan*obj_height_expan);
+			
+			// 【顶边上的采样点的x坐标】，如果边太大，则提供更多样本。为所有边缘提供至少10个样本。对于小物体，物体位姿会改变很多.
+			// NOTE 从边界框的最左边 left_x_raw+5 到最右边 right_x_raw-5 每隔 top_sample_resolution（20像素）的距离采样一个点top_x_samples[i].
+			int top_sample_resolution = round(min(20,obj_width_raw/10 )); //  25 pixels
+			std::vector<int> top_x_samples; 
+			linespace<int>(left_x_raw+5, right_x_raw-5, top_sample_resolution, top_x_samples);
+			// std::cout << "左：" << left_x_raw+5 << std::endl;
+			// std::cout << "右：" << right_x_raw-5 << std::endl;
+			// std::cout << "top_x_samples 采样点数：" << top_x_samples.size() << std::endl;
+			// for(int i=0; i<top_x_samples.size(); i++)
+			// 	std::cout << top_x_samples[i] << " " ;
+			// std::cout << std::endl;
+
+			// 存储采样的点：x坐标为采样的坐标， y坐标为最高点的y坐标.
+			MatrixXd sample_top_pts(2,top_x_samples.size());
+			for (int ii = 0; ii < top_x_samples.size(); ii++)
+			{
+				sample_top_pts(0,ii)=top_x_samples[ii];
+				sample_top_pts(1,ii)=top_y_raw;
+
+				// NOTE 保存采样点的坐标并绘制
+				points.push_back(Point2i(top_x_samples[ii], top_y_raw));
+				circle(image_point, points[ii], 3, cv::Scalar(255,0,0),-1,8,0);
+			}
 	      
 	      // expand some small margin for distance map  [10 20]
 	      int distmap_expand_wid = min(max(min(20, obj_width_raw-100),10),max(min(20, obj_height_expan-100),10));
@@ -207,7 +279,7 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat& rgb_img, const Matrix4d& tra
 		  cam_roll_samples.push_back(cam_pose_raw.euler_angle(0));cam_pitch_samples.push_back(cam_pose_raw.euler_angle(1));
 	      }
 	      // different from matlab. first for loop yaw, then for configurations.
-// 	      int obj_yaw_id=8;
+			// 	      int obj_yaw_id=8;
 	      for (int cam_roll_id=0;cam_roll_id<cam_roll_samples.size();cam_roll_id++)
 	      for (int cam_pitch_id=0;cam_pitch_id<cam_pitch_samples.size();cam_pitch_id++)
 	      for (int obj_yaw_id=0;obj_yaw_id<obj_yaw_samples.size();obj_yaw_id++)
@@ -226,13 +298,13 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat& rgb_img, const Matrix4d& tra
 		  getVanishingPoints(cam_pose.KinvR, obj_yaw_esti, vp_1,vp_2,vp_3); // for object x y z  axis
 
 		  MatrixXd all_vps(3,2);all_vps.row(0)=vp_1;all_vps.row(1)=vp_2;all_vps.row(2)=vp_3;
-// 		  std::cout<<"obj_yaw_esti  "<<obj_yaw_esti<<"  "<<obj_yaw_id<<std::endl;
+			// 		  std::cout<<"obj_yaw_esti  "<<obj_yaw_esti<<"  "<<obj_yaw_id<<std::endl;
 		  MatrixXd all_vp_bound_edge_angles = VP_support_edge_infos(all_vps, edge_mid_pts,lines_inobj_angles,
 									    Vector2d(vp12_edge_angle_thre,vp3_edge_angle_thre));
-// 		  int sample_top_pt_id=15;
+			// 		  int sample_top_pt_id=15;
 		  for (int sample_top_pt_id=0;sample_top_pt_id<sample_top_pts.cols();sample_top_pt_id++)
 		  {
-// 		      std::cout<<"sample_top_pt_id "<<sample_top_pt_id<<std::endl;
+			// 		      std::cout<<"sample_top_pt_id "<<sample_top_pt_id<<std::endl;
 		      Vector2d corner_1_top = sample_top_pts.col(sample_top_pt_id);
 		      bool config_good = true;
 		      int vp_1_position = 0;  // 0 initial as fail,  1  on left   2 on right
@@ -254,8 +326,8 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat& rgb_img, const Matrix4d& tra
 			  if (print_details) printf("Configuration fails at edge 1-2, too short\n"); 
 			  continue;
 		      }
-// 		      cout<<"corner_1/2   "<<corner_1_top.transpose()<<"   "<<corner_2_top.transpose()<<endl;
-// 		      int config_ind=0; // have to consider config now.
+				// 		      cout<<"corner_1/2   "<<corner_1_top.transpose()<<"   "<<corner_2_top.transpose()<<endl;
+				// 		      int config_ind=0; // have to consider config now.
 		      for (int config_id=1;config_id<3;config_id++)  // configuration one or two of matlab version
 		      {
 			  if (!all_configs[config_id-1])  
@@ -287,7 +359,7 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat& rgb_img, const Matrix4d& tra
 				  if (print_details) printf("Configuration %d fails at edge 3-4/3-2, too short\n",config_id); 
 				  continue;
 			      }
-// 			      cout<<"corner_3/4   "<<corner_3_top.transpose()<<"   "<<corner_4_top.transpose()<<endl;
+			// 			      cout<<"corner_3/4   "<<corner_3_top.transpose()<<"   "<<corner_4_top.transpose()<<endl;
 			  }
 			  if (config_id==2)
 			  {
@@ -315,7 +387,7 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat& rgb_img, const Matrix4d& tra
 				  if (print_details) printf("Configuration %d fails at edge 3-4/4-1, too short\n",config_id); 
 				  continue;
 			      }
-// 			      cout<<"corner_3/4   "<<corner_3_top.transpose()<<"   "<<corner_4_top.transpose()<<endl;
+			// 			      cout<<"corner_3/4   "<<corner_3_top.transpose()<<"   "<<corner_4_top.transpose()<<endl;
 			  }
 			  // compute first bottom points    computing bottom points is the same for config 1,2
 			  Vector2d corner_5_down = seg_hit_boundary(vp_3, corner_3_top,Vector4d(left_x_raw,down_y_expan,right_x_raw,down_y_expan));
@@ -361,7 +433,7 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat& rgb_img, const Matrix4d& tra
 			  
 			  MatrixXd box_corners_2d_float(2,8);
 			  box_corners_2d_float<<corner_1_top,corner_2_top,corner_3_top,corner_4_top,corner_5_down,corner_6_down,corner_7_down,corner_8_down;
-// 			  std::cout<<"box_corners_2d_float \n "<<box_corners_2d_float<<std::endl;
+			// 			  std::cout<<"box_corners_2d_float \n "<<box_corners_2d_float<<std::endl;
 			  MatrixXd box_corners_2d_float_shift(2,8);box_corners_2d_float_shift.row(0)=box_corners_2d_float.row(0).array()-left_x_expan_distmap;
 			  box_corners_2d_float_shift.row(1)=box_corners_2d_float.row(1).array()-top_y_expan_distmap;
 

@@ -127,7 +127,7 @@ void plot_image_with_cuboid(cv::Mat& plot_img, const cuboid* cube_obj)
     plot_image_with_cuboid_edges(plot_img, cube_obj->box_corners_2d, edge_markers);
 }
 
-
+// BRIEF 在原图上绘制检测到的线段.
 // each line is x1 y1 x2 y2   color: Scalar(255,0,0) eg
 void plot_image_with_edges(const cv::Mat& rgb_img, cv::Mat& output_img, MatrixXd& all_lines, const cv::Scalar& color)
 {
@@ -136,23 +136,23 @@ void plot_image_with_edges(const cv::Mat& rgb_img, cv::Mat& output_img, MatrixXd
 	cv::line(output_img,cv::Point(all_lines(i,0),all_lines(i,1)),cv::Point(all_lines(i,2),all_lines(i,3)), cv::Scalar(255,0,0), 2, 8, 0);
 }
 
-
 bool check_inside_box(const Vector2d& pt, const Vector2d& box_left_top, const Vector2d& box_right_bottom)
 {
      return box_left_top(0)<=pt(0) && pt(0)<=box_right_bottom(0) && box_left_top(1)<=pt(1) && pt(1)<=box_right_bottom(1);
 }
 
 // make sure edges start from left to right
+// 确保边缘从左到右.
 void align_left_right_edges(MatrixXd& all_lines)
 {
-    for (int line_id=0;line_id<all_lines.rows();line_id++)
+    for (int line_id=0; line_id<all_lines.rows(); line_id++)
     {
-	if (all_lines(line_id,2)<all_lines(line_id,0))
-	{
-	      Vector2d temp = all_lines.row(line_id).tail<2>();
-	      all_lines.row(line_id).tail<2>() = all_lines.row(line_id).head<2>();
-	      all_lines.row(line_id).head<2>() = temp;
-	}
+        if (all_lines(line_id,2) < all_lines(line_id,0))
+        {
+            Vector2d temp = all_lines.row(line_id).tail<2>();
+            all_lines.row(line_id).tail<2>() = all_lines.row(line_id).head<2>();
+            all_lines.row(line_id).head<2>() = temp;
+        }
     }
 }
 
