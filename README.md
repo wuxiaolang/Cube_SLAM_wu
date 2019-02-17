@@ -4,7 +4,7 @@
 
 ## line_lbd
 
-![](https://github.com/wuxiaolang/Cube_SLAM_wu/blob/master/wu/my%20data/line/LSD_edline%20.png?raw=true)
+![](https://github.com/wuxiaolang/Cube_SLAM_wu/blob/master/wu/result/line/LSD_edline%20.png?raw=true)
 
 
 ---
