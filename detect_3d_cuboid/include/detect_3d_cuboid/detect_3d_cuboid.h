@@ -78,7 +78,7 @@ public:
 			       std::vector<ObjectSet>& all_object_cuboids);     // TODO  all_object_cuboids 是什么？？
       
       ///@param   whether_plot_detail_images	是否显示细节图：边缘检测，Canny检测，距离归一化.
-      bool whether_plot_detail_images = false;
+      bool whether_plot_detail_images = true;
       ///@param   whether_plot_final_images	是否显示原始图+边框.
       bool whether_plot_final_images = false;	// 显示检测结果图.
       bool whether_save_final_images = false; 	// 保存检测结果图.

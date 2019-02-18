@@ -60,8 +60,8 @@ int main(int argc, char** argv)
       read_all_number_txt(base_folder+"edge_detection/LSD/"+frame_index_c+"_edge.txt", all_lines_raw);
       
       detect_3d_cuboid detect_cuboid_obj;
-      detect_cuboid_obj.whether_plot_detail_images = false;
-      detect_cuboid_obj.whether_plot_final_images = true;
+      detect_cuboid_obj.whether_plot_detail_images = true;
+      detect_cuboid_obj.whether_plot_final_images = false;
       detect_cuboid_obj.print_details = false;  // false  true
       detect_cuboid_obj.set_calibration(Kalib);
       detect_cuboid_obj.whether_sample_bbox_height = false;

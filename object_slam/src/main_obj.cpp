@@ -491,7 +491,7 @@ void incremental_build_graph(Eigen::MatrixXd& offline_pred_frame_objects, Eigen:
 	// STEP 【1.2 定义立方体检测对象】
     // 检测所有帧中的立方体，定义为一个【detect_3d_cuboid】类的detect_cuboid_obj对象.
     detect_3d_cuboid detect_cuboid_obj;
-    detect_cuboid_obj.whether_plot_detail_images = false;	// 不绘制检测细节图像.
+    detect_cuboid_obj.whether_plot_detail_images = true;	// 不绘制检测细节图像.
     detect_cuboid_obj.whether_plot_final_images = false;	// 不绘制检测结果图.
     detect_cuboid_obj.print_details = false;  				// 不输出检测细节.
     detect_cuboid_obj.set_calibration(calib);				// 设置内参.
@@ -593,7 +593,7 @@ void incremental_build_graph(Eigen::MatrixXd& offline_pred_frame_objects, Eigen:
 	      line_lbd_obj.detect_filter_lines(raw_rgb_img, all_lines_mat);
 
 		  // 将 all_lines_mat 存储到 all_lines_raw 中.
-	      Eigen::MatrixXd all_lines_raw(all_lines_mat.rows,4);		// TODO这里的4是什么，线段的两个端点，每个点的xy坐标.
+	      Eigen::MatrixXd all_lines_raw(all_lines_mat.rows,4);		// TODO：4，线段的两个端点，每个点的xy坐标.
 	      for (int rr=0;rr<all_lines_mat.rows;rr++)
 				for (int cc=0;cc<4;cc++)
 		  			all_lines_raw(rr,cc) = all_lines_mat.at<float>(rr,cc);
@@ -635,7 +635,7 @@ void incremental_build_graph(Eigen::MatrixXd& offline_pred_frame_objects, Eigen:
 		  currframe->cuboids_2d_img = detect_cuboid_obj.cuboids_2d_img;
 
 		  cvNamedWindow("currframe.cuboids_2d_img");
-		  cvMoveWindow("currframe.cuboids_2d_img", 20, 500);
+		  cvMoveWindow("currframe.cuboids_2d_img", 20, 300);
 		  cv::imshow("currframe.cuboids_2d_img",currframe->cuboids_2d_img);
 		  cv::waitKey(0);
 

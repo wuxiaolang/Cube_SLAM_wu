@@ -127,7 +127,7 @@ void plot_image_with_cuboid(cv::Mat& plot_img, const cuboid* cube_obj)
     plot_image_with_cuboid_edges(plot_img, cube_obj->box_corners_2d, edge_markers);
 }
 
-// BRIEF 在原图上绘制检测到的线段.
+// BRIEF plot_image_with_edges() 函数在原图上绘制检测到的线段.
 // each line is x1 y1 x2 y2   color: Scalar(255,0,0) eg
 void plot_image_with_edges(const cv::Mat& rgb_img, cv::Mat& output_img, MatrixXd& all_lines, const cv::Scalar& color)
 {
@@ -136,9 +136,10 @@ void plot_image_with_edges(const cv::Mat& rgb_img, cv::Mat& output_img, MatrixXd
 	cv::line(output_img,cv::Point(all_lines(i,0),all_lines(i,1)),cv::Point(all_lines(i,2),all_lines(i,3)), cv::Scalar(255,0,0), 2, 8, 0);
 }
 
+// BRIEF check_inside_box() 函数判断点 pt 是否在 box_left_top 和 box_right_bottom 组成的边框内.
 bool check_inside_box(const Vector2d& pt, const Vector2d& box_left_top, const Vector2d& box_right_bottom)
 {
-     return box_left_top(0)<=pt(0) && pt(0)<=box_right_bottom(0) && box_left_top(1)<=pt(1) && pt(1)<=box_right_bottom(1);
+    return box_left_top(0)<=pt(0) && pt(0)<=box_right_bottom(0) && box_left_top(1)<=pt(1) && pt(1)<=box_right_bottom(1);
 }
 
 // make sure edges start from left to right
@@ -164,6 +165,7 @@ void normalize_to_pi_vec(const VectorXd& raw_angles, VectorXd& new_angles)
 	new_angles(i)=normalize_to_pi<double>(raw_angles(i));
 }
 
+// BRIEF 根据线段的 水平和竖直长度x_vec y_vec 计算出角度 all_angles
 void atan2_vector(const VectorXd& y_vec, const VectorXd& x_vec, VectorXd& all_angles)
 {
     all_angles.resize(y_vec.rows());
@@ -295,78 +297,120 @@ cv::Point2f lineSegmentIntersect_f(const cv::Point2f& pt1_start, const cv::Point
 
 }
 
-
+// BRIEF merge_break_lines() 函数将短边合并成长边.
 // merge short edges into long. edges n*4  each edge should start from left to right! 
-void merge_break_lines(const MatrixXd& all_lines, MatrixXd& merge_lines_out, double pre_merge_dist_thre,
-		       double pre_merge_angle_thre_degree,double edge_length_threshold)
+void merge_break_lines( const MatrixXd& all_lines,          /*输入的所有在矩阵框内的线段矩阵*/
+                        MatrixXd& merge_lines_out,          /*输出的合并后的线段矩阵*/
+                        double pre_merge_dist_thre,         /*两条线段之间的距离阈值 20 像素*/
+		                double pre_merge_angle_thre_degree, /*角度阈值 5°*/
+                        double edge_length_threshold)       /*长度阈值 30*/
 {
     bool can_force_merge = true;
     merge_lines_out = all_lines;
+    // 线段条数：total_line_number 将越来越小，merge_lines_out 不变.
     int total_line_number = merge_lines_out.rows();  // line_number will become smaller and smaller, merge_lines_out doesn't change
-    int counter=0;
+    int counter = 0;
+    // 角度阈值，转换成弧度.
     double pre_merge_angle_thre = pre_merge_angle_thre_degree/180.0*M_PI;
-    while ((can_force_merge) && (counter<500)){
+
+    // STEP 【1.线段融合.】
+    while ((can_force_merge) && (counter<500))
+    {
 	    counter++;
 	    can_force_merge=false;
-	    MatrixXd line_vector = merge_lines_out.topRightCorner(total_line_number,2)-merge_lines_out.topLeftCorner(total_line_number,2);
-	    VectorXd all_angles; atan2_vector(line_vector.col(1),line_vector.col(0),all_angles); // don't need normalize_to_pi, because my edges is from left to right, always [-90 90]
-	    for (int seg1=0;seg1<total_line_number-1;seg1++) {
-		for (int seg2=seg1+1;seg2<total_line_number;seg2++){
-		      double diff = std::abs(all_angles(seg1)-all_angles(seg2));
-		      double angle_diff = std::min(diff,M_PI-diff);
-		      if (angle_diff<pre_merge_angle_thre){
-			  double dist_1ed_to_2=(merge_lines_out.row(seg1).tail(2)-merge_lines_out.row(seg2).head(2)).norm();
-			  double dist_2ed_to_1=(merge_lines_out.row(seg2).tail(2)-merge_lines_out.row(seg1).head(2)).norm();
-			  
-			  if ((dist_1ed_to_2<pre_merge_dist_thre) || (dist_2ed_to_1<pre_merge_dist_thre))
-			  {
-				Vector2d merge_start,merge_end;
-				if (merge_lines_out(seg1,0)<merge_lines_out(seg2,0))
-				    merge_start = merge_lines_out.row(seg1).head(2);
-				else
-				    merge_start = merge_lines_out.row(seg2).head(2);
-				
-				if (merge_lines_out(seg1,2)>merge_lines_out(seg2,2))
-				    merge_end = merge_lines_out.row(seg1).tail(2);
-				else
-				    merge_end = merge_lines_out.row(seg2).tail(2);
+        // 线段向量：所有线段的右边点的坐标 - 左边点的坐标 = 每条线段的水平x长度和竖直y长度.
+	    MatrixXd line_vector = merge_lines_out.topRightCorner(total_line_number,2) - merge_lines_out.topLeftCorner(total_line_number,2);
 
-				double merged_angle = std::atan2(merge_end(1)-merge_start(1),merge_end(0)-merge_start(0));
-				double temp=std::abs(all_angles(seg1)-merged_angle);
-				double merge_angle_diff = std::min( temp, M_PI-temp );
-				if (merge_angle_diff<pre_merge_angle_thre)
-				{
-				    merge_lines_out.row(seg1).head(2) = merge_start;
-				    merge_lines_out.row(seg1).tail(2) = merge_end;
-				    fast_RemoveRow(merge_lines_out,seg2,total_line_number);  //also decrease  total_line_number
-				    can_force_merge=true;
-				    break;
-				}
-			  }
-		      }
-		}
-		if (can_force_merge)
-		      break;			
-	    }
-    }
-//     std::cout<<"total_line_number after mege  "<<total_line_number<<std::endl;
-    if (edge_length_threshold>0)
+        //  @PARAM all_angles 计算【每条线段的角度】. 
+	    VectorXd all_angles; 
+        // 根据线段的 x 和 y 长度计算出角度（°）.
+        atan2_vector(line_vector.col(1),line_vector.col(0),all_angles); // don't need normalize_to_pi, because my edges is from left to right, always [-90 90]
+	    
+        // 处理每一条线段.
+        for (int seg1 = 0;seg1 < total_line_number - 1; seg1++) 
+        {
+		    for (int seg2 = seg1+1; seg2 < total_line_number; seg2++)
+            {
+                // 相邻两条选段的角度差 angle_diff.
+                double diff = std::abs(all_angles(seg1) - all_angles(seg2));
+                double angle_diff = std::min(diff, M_PI - diff);
+
+                // STEP 【1.1 先判断角度偏差】如果两条线段的角度误差小于 5°.
+                if (angle_diff < pre_merge_angle_thre)
+                {
+                    // dist_1ed_to_2：线1尾到线2头的距离；
+                    // dist_2ed_to_1：线2尾到线1头的距离；
+                    double dist_1ed_to_2 = (merge_lines_out.row(seg1).tail(2) - merge_lines_out.row(seg2).head(2)).norm();
+                    double dist_2ed_to_1 = (merge_lines_out.row(seg2).tail(2) - merge_lines_out.row(seg1).head(2)).norm();
+                    
+                    // STEP 【1.2 再判断距离偏差】如果两条线段之间的距离阈值小于距离阈值 pre_merge_dist_thre 20 像素
+                    if ((dist_1ed_to_2 < pre_merge_dist_thre) || (dist_2ed_to_1 < pre_merge_dist_thre))
+                    {
+                        // 确定融合之后的线段的两个端点.
+                        Vector2d merge_start, merge_end;
+                        if (merge_lines_out(seg1,0) < merge_lines_out(seg2,0))
+                            merge_start = merge_lines_out.row(seg1).head(2);
+                        else
+                            merge_start = merge_lines_out.row(seg2).head(2);
+                        if (merge_lines_out(seg1,2) > merge_lines_out(seg2,2))
+                            merge_end = merge_lines_out.row(seg1).tail(2);
+                        else
+                            merge_end = merge_lines_out.row(seg2).tail(2);
+                        
+                        // 融合之后的新的线段的角度 merged_angle.
+                        double merged_angle = std::atan2(merge_end(1)-merge_start(1),merge_end(0)-merge_start(0));
+                        
+                        // 计算线段 1 与合并之后的线段的角度偏差 merge_angle_diff.
+                        double temp = std::abs(all_angles(seg1) - merged_angle);
+                        double merge_angle_diff = std::min( temp, M_PI-temp );
+                        
+                        // NOTE 将融合的线段存储在 merge_lines_out 中，并减小 merge_lines_out 的大小（剔除了一条）.
+                        if (merge_angle_diff < pre_merge_angle_thre)
+                        {
+                            merge_lines_out.row(seg1).head(2) = merge_start;
+                            merge_lines_out.row(seg1).tail(2) = merge_end;
+                            fast_RemoveRow(merge_lines_out, seg2, total_line_number);  //also decrease  total_line_number
+                            can_force_merge = true;
+                            break;
+                        }
+                    }
+                }
+		    }   // 循环 2
+            if (can_force_merge)
+                break;			
+	    }   // 循环 1
+    }// NOTE 线段融合 END.
+    // 使用 LSD 的时候短线段比较多，合并比较明显，使用 edline 检测到的线段比较完整所以效果不是很明显.
+    std::cout<<"合并之前的线段数：" << all_lines.rows() + 1 << std::endl;
+    std::cout<<"合并之后的线段数：" << total_line_number + 1 << std::endl;
+
+    // STEP 【2.长度筛选】
+    if (edge_length_threshold > 0)
     {
-	MatrixXd line_vectors = merge_lines_out.topRightCorner(total_line_number,2)-merge_lines_out.topLeftCorner(total_line_number,2);
-	VectorXd line_lengths=line_vectors.rowwise().norm();
-	int long_line_number=0;
-	MatrixXd long_merge_lines(total_line_number,4);
-	for (int i=0;i<total_line_number;i++){
-	  if (line_lengths(i)>edge_length_threshold)
-	  {
-	    long_merge_lines.row(long_line_number)=merge_lines_out.row(i);
-	    long_line_number++;
-	  }
-	}
-	merge_lines_out = long_merge_lines.topRows(long_line_number);
+        // 重新计算合并之后的线段向量：所有线段的右边点的坐标 - 左边点的坐标 = 每条线段的水平x长度和竖直y长度.
+        MatrixXd line_vectors = merge_lines_out.topRightCorner(total_line_number,2) - merge_lines_out.topLeftCorner(total_line_number,2);
+        // @PARAM line_lengths 存储每条线段的长度
+        VectorXd line_lengths = line_vectors.rowwise().norm();
+        // std::cout << "x y 投影长度 line_vectors:\n" << line_vectors << std::endl;
+        // std::cout << "线段长度 line_lengths:\n" << line_lengths << std::endl;
+
+        int long_line_number = 0;
+        MatrixXd long_merge_lines(total_line_number, 4);
+        for (int i = 0; i < total_line_number; i++)
+        {
+            // 如果线段长度大于阈值.
+            if (line_lengths(i) > edge_length_threshold)
+            {
+                long_merge_lines.row(long_line_number) = merge_lines_out.row(i);
+                long_line_number++;
+            }
+        }
+        // 将长度满足要求的挑选出来.
+        merge_lines_out = long_merge_lines.topRows(long_line_number);
     }
     else
-	merge_lines_out.conservativeResize(total_line_number,NoChange);
+	    merge_lines_out.conservativeResize(total_line_number,NoChange);
+    std::cout<<"长度筛选之后的线段数：" << merge_lines_out.rows() + 1 << std::endl;
 }
 
 // VPs 3*2   edge_mid_pts: n*2   vp_support_angle_thres 1*2

@@ -206,7 +206,7 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat& rgb_img, const Matrix4d& tra
 			// 	std::cout << top_x_samples[i] << " " ;
 			// std::cout << std::endl;
 
-			// 存储采样的点：x坐标为采样的坐标， y坐标为最高点的y坐标.
+			// 存储顶边采样的点：x坐标为采样的坐标， y坐标为最高点的y坐标.
 			MatrixXd sample_top_pts(2,top_x_samples.size());
 			for (int ii = 0; ii < top_x_samples.size(); ii++)
 			{
@@ -218,30 +218,53 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat& rgb_img, const Matrix4d& tra
 				circle(image_point, points[ii], 3, cv::Scalar(255,0,0),-1,8,0);
 			}
 	      
-	      // expand some small margin for distance map  [10 20]
-	      int distmap_expand_wid = min(max(min(20, obj_width_raw-100),10),max(min(20, obj_height_expan-100),10));
-	      int left_x_expan_distmap = max(0,left_x_raw-distmap_expand_wid); int right_x_expan_distmap = min(img_width-1,right_x_raw+distmap_expand_wid);
-	      int top_y_expan_distmap = max(0,top_y_raw-distmap_expand_wid); int down_y_expan_distmap = min(img_height-1,down_y_expan+distmap_expand_wid);
-	      int height_expan_distmap = down_y_expan_distmap - top_y_expan_distmap; int width_expan_distmap = right_x_expan_distmap - left_x_expan_distmap;
-	      Vector2d expan_distmap_lefttop = Vector2d(left_x_expan_distmap, top_y_expan_distmap);
-	      Vector2d expan_distmap_rightbottom = Vector2d(right_x_expan_distmap, down_y_expan_distmap);
+			// expand some small margin for distance map  [10 20]
+			// @PARAM 拓宽检测框的边界.
+			int distmap_expand_wid = min(max(min(20, obj_width_raw-100),10), max(min(20, obj_height_expan-100),10));	// 20.
+			int left_x_expan_distmap = max(0,left_x_raw-distmap_expand_wid); 				// 检测框左边界 x 坐标往左扩大 20.
+			int right_x_expan_distmap = min(img_width-1,right_x_raw+distmap_expand_wid);	// 检测框右边界 x 坐标往右扩大 20.
+			int top_y_expan_distmap = max(0,top_y_raw-distmap_expand_wid); 					// 检测框上边界 y 坐标往上扩大 20.
+			int down_y_expan_distmap = min(img_height-1,down_y_expan+distmap_expand_wid);	// 检测框下边界 y 坐标往上扩大 20.
+			int height_expan_distmap = down_y_expan_distmap - top_y_expan_distmap; 			// 扩大后的高度.
+			int width_expan_distmap = right_x_expan_distmap - left_x_expan_distmap;			// 扩大后的宽度.
+			// std::cout << "distmap_expand_wid：" << distmap_expand_wid << std::endl;
+			// std::cout << "left_x_expan_distmap：" << left_x_expan_distmap << std::endl;
+			// std::cout << "right_x_expan_distmap：" << right_x_expan_distmap  << std::endl;
+			// std::cout << "top_y_expan_distmap：" << top_y_expan_distmap << std::endl;
+			// std::cout << "down_y_expan_distmap：" << down_y_expan_distmap << std::endl;
+			// std::cout << "width_expan_distmap：" << width_expan_distmap << std::endl;
+			Vector2d expan_distmap_lefttop = Vector2d(left_x_expan_distmap, top_y_expan_distmap);			// 左上角坐标.
+			Vector2d expan_distmap_rightbottom = Vector2d(right_x_expan_distmap, down_y_expan_distmap);		// 右下角坐标.
 	      
-	      // find edges inside the object bounding box
-	      MatrixXd all_lines_inside_object(all_lines_raw.rows(),all_lines_raw.cols()); // first allocate a large matrix, then only use the toprows to avoid copy, alloc
-	      int inside_obj_edge_num = 0;
-	      for (int edge_id=0;edge_id<all_lines_raw.rows();edge_id++)
-		if (check_inside_box(all_lines_raw.row(edge_id).head<2>(),expan_distmap_lefttop, expan_distmap_rightbottom ))
-		  if (check_inside_box(all_lines_raw.row(edge_id).tail<2>(),expan_distmap_lefttop, expan_distmap_rightbottom ))
-		    {
-			all_lines_inside_object.row(inside_obj_edge_num) = all_lines_raw.row(edge_id);
-			inside_obj_edge_num++;
-		    }
+		  	// 找出在扩大后的边界框内的线段.
+	      	// find edges inside the object bounding box
+			// @PARAM all_lines_inside_object：存储所有在扩大后的边界框内的线段.
+			MatrixXd all_lines_inside_object(all_lines_raw.rows(),all_lines_raw.cols()); // first allocate a large matrix, then only use the toprows to avoid copy, alloc
+			int inside_obj_edge_num = 0;
+			// 遍历 all_lines_raw 中的每一条线
+			for (int edge_id = 0; edge_id < all_lines_raw.rows(); edge_id++)
+				// 判断 all_lines_raw 矩阵中第 edge_id 线段的一个端点.head<2> 是否在区域中.
+				if (check_inside_box(all_lines_raw.row(edge_id).head<2>(), expan_distmap_lefttop, expan_distmap_rightbottom ))
+					// 判断 all_lines_raw 矩阵中第 edge_id 线段的另一个端点.tail<2> 是否在区域中.
+					if (check_inside_box(all_lines_raw.row(edge_id).tail<2>(),expan_distmap_lefttop, expan_distmap_rightbottom ))
+					{
+						// 存储所有在扩大后的边界框内的线段.
+						all_lines_inside_object.row(inside_obj_edge_num) = all_lines_raw.row(edge_id);
+						inside_obj_edge_num++;
+					}
 	      
-	      // merge edges and remove short lines, after finding object edges.  edge merge in small regions should be faster than all.
-	      double pre_merge_dist_thre = 20; double pre_merge_angle_thre = 5; double edge_length_threshold=30;
-	      MatrixXd all_lines_merge_inobj; 
-	      merge_break_lines(all_lines_inside_object.topRows(inside_obj_edge_num),all_lines_merge_inobj,pre_merge_dist_thre,
-				pre_merge_angle_thre,edge_length_threshold);
+		  	// 在找到物体的边缘线之后合并边，并剔除短边，小区域的边缘合并应该更快.
+			// merge edges and remove short lines, after finding object edges.  edge merge in small regions should be faster than all.
+			// @PARAM 线段合并与筛选参数.
+			double pre_merge_dist_thre = 20; 
+			double pre_merge_angle_thre = 5; 
+			double edge_length_threshold = 30;
+			MatrixXd all_lines_merge_inobj; 
+			merge_break_lines(	all_lines_inside_object.topRows(inside_obj_edge_num), /*输入all_lines_inside_object矩阵的前inside_obj_edge_num行*/
+								all_lines_merge_inobj, 		/*输出的合并后的线段矩阵*/
+								pre_merge_dist_thre,		/*两条线段的距离（水平）阈值 20 像素*/
+							  	pre_merge_angle_thre, 		/*角度阈值 5°*/
+								edge_length_threshold);		/*长度阈值 30 像素*/
 
 	      // compute edge angels and middle points
 	      VectorXd lines_inobj_angles(all_lines_merge_inobj.rows());
