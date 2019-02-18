@@ -77,6 +77,7 @@ template void rot_to_euler_zyx<float>(const Matrix3f&, float&, float&, float&);
 
 
 
+// BRIEF    euler_zyx_to_rot()     将欧拉角表示的旋转转换成 3*3 的旋转矩阵 R.
 template <class T>
 Eigen::Matrix<T,3,3> euler_zyx_to_rot(const T& roll,const T& pitch,const T& yaw)
 {
@@ -164,17 +165,17 @@ void homo_to_real_coord(const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>& 
 }
 template void homo_to_real_coord<double>(const MatrixXd&,MatrixXd&);template void homo_to_real_coord<float>(const MatrixXf&,MatrixXf&);
 
-
+// BRIEF    homo_to_real_coord_vec()    【格式转换】
 template <class T>  // though vector can be casted into matrix, to make output clear to be vector, it is better to define a new function.
 Eigen::Matrix<T, Eigen::Dynamic, 1> homo_to_real_coord_vec(const Eigen::Matrix<T, Eigen::Dynamic, 1>& pts_homo_in)
 {
-  Eigen::Matrix<T, Eigen::Dynamic, 1> pt_out;
-  if (pts_homo_in.rows()==4)
-    pt_out=pts_homo_in.head(3)/pts_homo_in(3);
-  else if (pts_homo_in.rows()==3)
-    pt_out=pts_homo_in.head(2)/pts_homo_in(2);
+    Eigen::Matrix<T, Eigen::Dynamic, 1> pt_out;
+    if (pts_homo_in.rows()==4)
+        pt_out=pts_homo_in.head(3)/pts_homo_in(3);
+    else if (pts_homo_in.rows()==3)
+        pt_out=pts_homo_in.head(2)/pts_homo_in(2);
 
-  return pt_out;    
+    return pt_out;    
 }
 template VectorXd homo_to_real_coord_vec<double>(const VectorXd&); template VectorXf homo_to_real_coord_vec<float>(const VectorXf&);
 
@@ -333,7 +334,7 @@ void sort_indexes(const Eigen::VectorXd &vec, std::vector<int>& idx)
 }
 
 
-
+// BRIEF    normalize_to_pi()   将角度转换成 -90 ~90.
 template <class T>
 T normalize_to_pi(T angle)
 {

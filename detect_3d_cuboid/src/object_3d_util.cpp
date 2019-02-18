@@ -143,11 +143,12 @@ bool check_inside_box(const Vector2d& pt, const Vector2d& box_left_top, const Ve
 }
 
 // make sure edges start from left to right
-// 确保边缘从左到右.
+// BRIEF align_left_right_edges()函数 确保存储的边缘两个顶点是从左到右.
 void align_left_right_edges(MatrixXd& all_lines)
 {
-    for (int line_id=0; line_id<all_lines.rows(); line_id++)
+    for (int line_id=0; line_id < all_lines.rows(); line_id++)
     {
+        // 0 1， 2 3 要求第2个点的x坐标（2）要大于第一个点的 x 坐标（0）.
         if (all_lines(line_id,2) < all_lines(line_id,0))
         {
             Vector2d temp = all_lines.row(line_id).tail<2>();
@@ -415,47 +416,59 @@ void merge_break_lines( const MatrixXd& all_lines,          /*输入的所有在
 
 // VPs 3*2   edge_mid_pts: n*2   vp_support_angle_thres 1*2
 // output: 3*2  each row is a VP's two boundary supported edges' angle.  if not found, nan for that entry
-Eigen::MatrixXd VP_support_edge_infos(Eigen::MatrixXd& VPs, Eigen::MatrixXd& edge_mid_pts, Eigen::VectorXd& edge_angles,
-				      Eigen::Vector2d vp_support_angle_thres)
+// BRIEF 3*2的矩阵，每行是每个消失点支持线的角度.
+Eigen::MatrixXd VP_support_edge_infos(  Eigen::MatrixXd& VPs,                   /* 消失点矩阵 3*2 */
+                                        Eigen::MatrixXd& edge_mid_pts,          /* 每条线段的中点 n×2 */
+                                        Eigen::VectorXd& edge_angles,           /* 每条线段的偏角 n×1 */
+				                        Eigen::Vector2d vp_support_angle_thres) /* 消失点的两个角度阈值 n×2 */
 {
-    MatrixXd all_vp_bound_edge_angles=MatrixXd::Ones(3,2)*nan(""); // initialize as nan  use isnan to check
-    if (edge_mid_pts.rows()>0)
+    MatrixXd all_vp_bound_edge_angles = MatrixXd::Ones(3,2) * nan(""); // initialize as nan  use isnan to check
+    if (edge_mid_pts.rows() > 0)
     {
-	for (int vp_id=0;vp_id<VPs.rows();vp_id++)
-	{
-	    double vp_angle_thre;
-	    if (vp_id!=2)
-		vp_angle_thre = vp_support_angle_thres(0)/180.0*M_PI;
-	    else
-		vp_angle_thre = vp_support_angle_thres(1)/180.0*M_PI;
-    
-	    std::vector<int> vp_inlier_edge_id;
-	    VectorXd vp_edge_midpt_angle_raw_inlier(edge_angles.rows());
-	    for (int edge_id=0;edge_id<edge_angles.rows();edge_id++)
-	    {
-		double vp1_edge_midpt_angle_raw_i = atan2(edge_mid_pts(edge_id,1)-VPs(vp_id,1),edge_mid_pts(edge_id,0)-VPs(vp_id,0));
-		double vp1_edge_midpt_angle_norm_i = normalize_to_pi<double>(vp1_edge_midpt_angle_raw_i);
-		double angle_diff_i = std::abs(edge_angles(edge_id) - vp1_edge_midpt_angle_norm_i);
-		angle_diff_i = std::min(angle_diff_i,M_PI-angle_diff_i);
-		if (angle_diff_i<vp_angle_thre)
-		{
-		    vp_edge_midpt_angle_raw_inlier(vp_inlier_edge_id.size())=vp1_edge_midpt_angle_raw_i;
-		    vp_inlier_edge_id.push_back(edge_id);
-		}
-	    }
-	    if (vp_inlier_edge_id.size()>0) // if found inlier edges
-	    {
-		VectorXd vp1_edge_midpt_angle_raw_inlier_shift; smooth_jump_angles(vp_edge_midpt_angle_raw_inlier.head(vp_inlier_edge_id.size()),
-										   vp1_edge_midpt_angle_raw_inlier_shift);
-		int vp1_low_edge_id;	vp1_edge_midpt_angle_raw_inlier_shift.maxCoeff(&vp1_low_edge_id);
-		int vp1_top_edge_id;	vp1_edge_midpt_angle_raw_inlier_shift.minCoeff(&vp1_top_edge_id);
-		if (vp_id>0)
-		  std::swap(vp1_low_edge_id,vp1_top_edge_id);  // match matlab code
-		all_vp_bound_edge_angles(vp_id,0) = edge_angles(vp_inlier_edge_id[vp1_low_edge_id]);   // it will be 0*1 matrix if not found inlier edges.
-		all_vp_bound_edge_angles(vp_id,1) = edge_angles(vp_inlier_edge_id[vp1_top_edge_id]);
-	    }
-	}
-    }    
+        for (int vp_id = 0; vp_id < VPs.rows(); vp_id++)
+        {
+            double vp_angle_thre;
+            if (vp_id!=2)
+                vp_angle_thre = vp_support_angle_thres(0)/180.0*M_PI;
+            else
+                vp_angle_thre = vp_support_angle_thres(1)/180.0*M_PI;
+        
+            std::vector<int> vp_inlier_edge_id;                             // 在范围内的边的 id.
+            VectorXd vp_edge_midpt_angle_raw_inlier(edge_angles.rows());    // 边与第 vp_id 个消失点角度差在范围内的角度矩阵.
+
+            for (int edge_id = 0; edge_id < edge_angles.rows(); edge_id++)
+            {
+                // @PARAM   vp1_edge_midpt_angle_raw_i   消失点到边的中点的角度. 
+                double vp1_edge_midpt_angle_raw_i = atan2( edge_mid_pts(edge_id,1) - VPs(vp_id,1), edge_mid_pts(edge_id,0) - VPs(vp_id,0) );
+                
+                // @PARAM   vp1_edge_midpt_angle_norm_i  标准化之后的角度（-90 ~90）.
+                double vp1_edge_midpt_angle_norm_i = normalize_to_pi<double>(vp1_edge_midpt_angle_raw_i);
+                
+                // @PARAM   angle_diff_i    消失点_中点的角度 与 线段的角度差.
+                double angle_diff_i = std::abs(edge_angles(edge_id) - vp1_edge_midpt_angle_norm_i);
+                angle_diff_i = std::min(angle_diff_i,M_PI-angle_diff_i);
+                
+                // 如果角度差小于阈值， 保存下与第 edge_id 条边中点的角度
+                if (angle_diff_i < vp_angle_thre)
+                {
+                    vp_edge_midpt_angle_raw_inlier(vp_inlier_edge_id.size()) = vp1_edge_midpt_angle_raw_i;
+                    vp_inlier_edge_id.push_back(edge_id);
+                }
+            }
+
+            if (vp_inlier_edge_id.size()>0) // if found inlier edges
+            {
+                VectorXd vp1_edge_midpt_angle_raw_inlier_shift; smooth_jump_angles(vp_edge_midpt_angle_raw_inlier.head(vp_inlier_edge_id.size()),
+                                                vp1_edge_midpt_angle_raw_inlier_shift);
+                int vp1_low_edge_id;	vp1_edge_midpt_angle_raw_inlier_shift.maxCoeff(&vp1_low_edge_id);
+                int vp1_top_edge_id;	vp1_edge_midpt_angle_raw_inlier_shift.minCoeff(&vp1_top_edge_id);
+                if (vp_id>0)
+                std::swap(vp1_low_edge_id,vp1_top_edge_id);  // match matlab code
+                all_vp_bound_edge_angles(vp_id,0) = edge_angles(vp_inlier_edge_id[vp1_low_edge_id]);   // it will be 0*1 matrix if not found inlier edges.
+                all_vp_bound_edge_angles(vp_id,1) = edge_angles(vp_inlier_edge_id[vp1_top_edge_id]);
+            }
+        }
+    }
     return all_vp_bound_edge_angles;
 }
 
@@ -627,11 +640,16 @@ Vector4d get_wall_plane_equation(const Vector3d& gnd_seg_pt1, const Vector3d& gn
     return plane_equation;
 }
 
-void getVanishingPoints(const Matrix3d& KinvR, double yaw_esti, Vector2d& vp_1, Vector2d& vp_2, Vector2d& vp_3)
+// BRIEF    getVanishingPoints()    【消失点计算】.
+void getVanishingPoints(const Matrix3d& KinvR,  /* Kalib*invR */
+                        double yaw_esti,        /* 采样的偏航角 */
+                        Vector2d& vp_1,         /* 输出的消失点 */
+                        Vector2d& vp_2, 
+                        Vector2d& vp_3)
 {
-    vp_1 = homo_to_real_coord_vec<double>(KinvR*Vector3d( cos(yaw_esti),sin(yaw_esti),0));  // for object x axis
-    vp_2 = homo_to_real_coord_vec<double>(KinvR*Vector3d(-sin(yaw_esti),cos(yaw_esti),0));  // for object y axis
-    vp_3 = homo_to_real_coord_vec<double>(KinvR*Vector3d(0,0,1));  // for object z axis
+    vp_1 = homo_to_real_coord_vec<double>( KinvR * Vector3d(cos(yaw_esti), sin(yaw_esti), 0) );     // for object x axis
+    vp_2 = homo_to_real_coord_vec<double>( KinvR * Vector3d(-sin(yaw_esti), cos(yaw_esti), 0) );    // for object y axis
+    vp_3 = homo_to_real_coord_vec<double>( KinvR * Vector3d(0,0,1) );                               // for object z axis
 }
 
 

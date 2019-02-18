@@ -67,7 +67,7 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat& rgb_img, const Matrix4d& tra
 {
 	// TODO:
 	typedef cv::Point_<int> Point2i;
-	std::vector<Point2i> points;
+	std::vector<Point2i> simple_points;		// 上边缘采样点.
 	cv::Mat image_point = rgb_img;
 
 	// 读取相机位姿，将 Matrix4d 表示的相机位姿转换成自定义的 cam_pose_infos 位姿结构体格式.
@@ -170,7 +170,7 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat& rgb_img, const Matrix4d& tra
 		// @PARAM 【偏航角】初始化为面向相机，与相机光轴对齐.
 		double yaw_init = cam_pose.camera_yaw - 90.0 / 180.0 * M_PI;  // yaw init is directly facing the camera, align with camera optical axis	  
 
-		// 偏航角采样
+		// NOTE 偏航角采样 -45 °到45°，每隔6°采样一个值，共15个.
 		std::vector<double> obj_yaw_samples; 
 		// BRIEF linespace()函数从 a 到 b 以步长 c 产生采样的 d.
 		linespace<double>(yaw_init - 45.0/180.0*M_PI, yaw_init + 45.0/180.0*M_PI, 6.0/180.0*M_PI, obj_yaw_samples);
@@ -184,7 +184,7 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat& rgb_img, const Matrix4d& tra
 		raw_obj_proposals.reserve(100);		// 序列长度为 100.
 
 		// 循环 1 次或 3 次.
-// 	    int sample_down_expan_id=1;
+		// int sample_down_expan_id=1;
 		for (int sample_down_expan_id = 0; sample_down_expan_id < down_expand_sample_all.size(); sample_down_expan_id++)
 		{
 			int down_expand_sample = down_expand_sample_all[sample_down_expan_id]; 	// = 0 ,10 或 20 
@@ -214,8 +214,8 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat& rgb_img, const Matrix4d& tra
 				sample_top_pts(1,ii)=top_y_raw;
 
 				// NOTE 保存采样点的坐标并绘制
-				points.push_back(Point2i(top_x_samples[ii], top_y_raw));
-				circle(image_point, points[ii], 3, cv::Scalar(255,0,0),-1,8,0);
+				simple_points.push_back(Point2i(top_x_samples[ii], top_y_raw));
+				circle(image_point, simple_points[ii], 3, cv::Scalar(255,0,0),-1,8,0);
 			}
 	      
 			// expand some small margin for distance map  [10 20]
@@ -259,72 +259,106 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat& rgb_img, const Matrix4d& tra
 			double pre_merge_dist_thre = 20; 
 			double pre_merge_angle_thre = 5; 
 			double edge_length_threshold = 30;
-			MatrixXd all_lines_merge_inobj; 
+			MatrixXd all_lines_merge_inobj; 	// NOTE 合并之后的线段存储矩阵.
 			merge_break_lines(	all_lines_inside_object.topRows(inside_obj_edge_num), /*输入all_lines_inside_object矩阵的前inside_obj_edge_num行*/
 								all_lines_merge_inobj, 		/*输出的合并后的线段矩阵*/
 								pre_merge_dist_thre,		/*两条线段的距离（水平）阈值 20 像素*/
 							  	pre_merge_angle_thre, 		/*角度阈值 5°*/
 								edge_length_threshold);		/*长度阈值 30 像素*/
 
-	      // compute edge angels and middle points
-	      VectorXd lines_inobj_angles(all_lines_merge_inobj.rows());
-	      MatrixXd edge_mid_pts(all_lines_merge_inobj.rows(),2);
-	      for (int i=0;i<all_lines_merge_inobj.rows();i++)
-	      {
-		  lines_inobj_angles(i) = std::atan2(all_lines_merge_inobj(i,3)-all_lines_merge_inobj(i,1), all_lines_merge_inobj(i,2)-all_lines_merge_inobj(i,0));   // [-pi/2 -pi/2]
-		  edge_mid_pts.row(i).head<2>() = (all_lines_merge_inobj.row(i).head<2>()+all_lines_merge_inobj.row(i).tail<2>())/2;
-	      }
+			// 计算每条边缘线段的角度和中点.
+			// @PARAM lines_inobj_angles	线段角度.
+			// @PARAM edge_mid_pts			线段的中点.
+			VectorXd lines_inobj_angles(all_lines_merge_inobj.rows());
+			MatrixXd edge_mid_pts(all_lines_merge_inobj.rows(),2);
+			for (int i=0; i < all_lines_merge_inobj.rows(); i++)
+			{
+				lines_inobj_angles(i) = std::atan2(all_lines_merge_inobj(i,3)-all_lines_merge_inobj(i,1), all_lines_merge_inobj(i,2)-all_lines_merge_inobj(i,0));   // [-pi/2 -pi/2]
+				edge_mid_pts.row(i).head<2>() = (all_lines_merge_inobj.row(i).head<2>()+all_lines_merge_inobj.row(i).tail<2>())/2;
+			}
 
-	      // TODO could canny or distance map outside sampling height to speed up!!!!   Then only need to compute canny onces.
-	      // detect canny edges and compute distance transform  NOTE opencv canny maybe different from matlab. but roughly same
-	      cv::Rect object_bbox = cv::Rect(left_x_expan_distmap,top_y_expan_distmap,width_expan_distmap,height_expan_distmap);//
-	      cv::Mat im_canny; cv::Canny(gray_img(object_bbox),im_canny,80,200); // low thre, high thre    im_canny 0 or 255   [80 200  40 100]
-	      cv::Mat dist_map; cv::distanceTransform(255-im_canny,dist_map,CV_DIST_L2,3); // dist_map is float datatype
+			// TODO could canny or distance map outside sampling height to speed up!!!!   Then only need to compute canny onces.
+			// detect canny edges and compute distance transform  NOTE opencv canny maybe different from matlab. but roughly same
+			// @PARAM		object_bbox		扩大后的检测框.
+			cv::Rect object_bbox = cv::Rect(left_x_expan_distmap, top_y_expan_distmap, width_expan_distmap, height_expan_distmap);//
+			
+			// NOTE Canny 算子边缘检测.
+			cv::Mat im_canny; 
+			cv::Canny(gray_img(object_bbox),im_canny,80,200); // low thre, high thre    im_canny 0 or 255   [80 200  40 100]
+			// 距离变换.
+			cv::Mat dist_map; 
+			cv::distanceTransform(255 - im_canny, dist_map, CV_DIST_L2, 3); // dist_map is float datatype
 
-	      if (whether_plot_detail_images){
-		  cv::imshow("im_canny",im_canny);
-		  cv::Mat dist_map_img;cv::normalize(dist_map, dist_map_img, 0.0, 1.0, cv::NORM_MINMAX);
-		  cv::imshow("normalized distance map", dist_map_img);cv::waitKey();
-	      }
+			// 是否显示处理细节.
+			if (whether_plot_detail_images)
+			{
+				cv::imshow("im_canny",im_canny);
+				cv::Mat dist_map_img;cv::normalize(dist_map, dist_map_img, 0.0, 1.0, cv::NORM_MINMAX);
+				cv::imshow("normalized distance map", dist_map_img);cv::waitKey();
+			}
 
-	      // Generate cuboids
-	      MatrixXd all_configs_error_one_objH(200,9);    MatrixXd all_box_corners_2d_one_objH(400,8); 
-	      int valid_config_number_one_objH=0;
-	      
-	      std::vector<double> cam_roll_samples; std::vector<double> cam_pitch_samples;
-	      if (whether_sample_cam_roll_pitch)
-	      {
-		  linespace<double>(cam_pose_raw.euler_angle(0)-6.0/180.0*M_PI, cam_pose_raw.euler_angle(0)+6.0/180.0*M_PI, 3.0/180.0*M_PI, cam_roll_samples);
-		  linespace<double>(cam_pose_raw.euler_angle(1)-6.0/180.0*M_PI, cam_pose_raw.euler_angle(1)+6.0/180.0*M_PI, 3.0/180.0*M_PI, cam_pitch_samples);
-	      }
-	      else
-	      {
-		  cam_roll_samples.push_back(cam_pose_raw.euler_angle(0));cam_pitch_samples.push_back(cam_pose_raw.euler_angle(1));
-	      }
-	      // different from matlab. first for loop yaw, then for configurations.
-			// 	      int obj_yaw_id=8;
-	      for (int cam_roll_id=0;cam_roll_id<cam_roll_samples.size();cam_roll_id++)
-	      for (int cam_pitch_id=0;cam_pitch_id<cam_pitch_samples.size();cam_pitch_id++)
-	      for (int obj_yaw_id=0;obj_yaw_id<obj_yaw_samples.size();obj_yaw_id++)
-	      {
-		  if (whether_sample_cam_roll_pitch)
-		  {
-		      Matrix4d transToWolrd_new = transToWolrd;
-		      transToWolrd_new.topLeftCorner<3,3>() = euler_zyx_to_rot<double>(cam_roll_samples[cam_roll_id], cam_pitch_samples[cam_pitch_id], cam_pose_raw.euler_angle(2));
-		      set_cam_pose(transToWolrd_new);
-		      ground_plane_sensor = cam_pose.transToWolrd.transpose()*ground_plane_world;
-		  }
-		
-		  double obj_yaw_esti=obj_yaw_samples[obj_yaw_id];
-		  
-		  Vector2d vp_1, vp_2, vp_3;
-		  getVanishingPoints(cam_pose.KinvR, obj_yaw_esti, vp_1,vp_2,vp_3); // for object x y z  axis
+			// STEP 生成立方体
+			MatrixXd all_configs_error_one_objH(200,9);    
+			MatrixXd all_box_corners_2d_one_objH(400,8); 
+			int valid_config_number_one_objH = 0;
 
-		  MatrixXd all_vps(3,2);all_vps.row(0)=vp_1;all_vps.row(1)=vp_2;all_vps.row(2)=vp_3;
-			// 		  std::cout<<"obj_yaw_esti  "<<obj_yaw_esti<<"  "<<obj_yaw_id<<std::endl;
-		  MatrixXd all_vp_bound_edge_angles = VP_support_edge_infos(all_vps, edge_mid_pts,lines_inobj_angles,
-									    Vector2d(vp12_edge_angle_thre,vp3_edge_angle_thre));
-			// 		  int sample_top_pt_id=15;
+		  	// 采样相机 roll pitch 角，在相机偏角的+-6°每隔3°采样一个值 或者 直接使用相机的roll pitch角.
+	      	std::vector<double> cam_roll_samples; 
+			std::vector<double> cam_pitch_samples;
+			if (whether_sample_cam_roll_pitch)
+			{
+				linespace<double>(cam_pose_raw.euler_angle(0)-6.0/180.0*M_PI, cam_pose_raw.euler_angle(0)+6.0/180.0*M_PI, 3.0/180.0*M_PI, cam_roll_samples);
+				linespace<double>(cam_pose_raw.euler_angle(1)-6.0/180.0*M_PI, cam_pose_raw.euler_angle(1)+6.0/180.0*M_PI, 3.0/180.0*M_PI, cam_pitch_samples);
+			}
+			else
+			{
+				cam_roll_samples.push_back(cam_pose_raw.euler_angle(0));
+				cam_pitch_samples.push_back(cam_pose_raw.euler_angle(1));
+			}
+
+			// different from matlab. first for loop yaw, then for configurations.
+			// int obj_yaw_id = 8;
+			// 分别遍历采样的 roll，pitch 和 yaw 角.
+			for (int cam_roll_id = 0; cam_roll_id < cam_roll_samples.size(); cam_roll_id++)
+			for (int cam_pitch_id = 0; cam_pitch_id < cam_pitch_samples.size(); cam_pitch_id++)
+			for (int obj_yaw_id = 0; obj_yaw_id < obj_yaw_samples.size(); obj_yaw_id++)
+			{
+				if (whether_sample_cam_roll_pitch)
+				{
+					Matrix4d transToWolrd_new = transToWolrd;
+					// 将当前角度值转换成旋转矩阵. TODO 这里yaw为什么不用采样的值而用相机的值？？
+					transToWolrd_new.topLeftCorner<3,3>() = euler_zyx_to_rot<double>(cam_roll_samples[cam_roll_id], cam_pitch_samples[cam_pitch_id], cam_pose_raw.euler_angle(2));
+					set_cam_pose(transToWolrd_new);
+					// TODO 平面？？
+					ground_plane_sensor = cam_pose.transToWolrd.transpose() * ground_plane_world;
+				}
+
+				// 采样的偏航角.
+				double obj_yaw_esti = obj_yaw_samples[obj_yaw_id];
+
+				// @PARAM	vp_1, vp_2, vp_3	三个消失点.
+				Vector2d vp_1, vp_2, vp_3;
+				// NOTE 获取消失点.
+				getVanishingPoints(cam_pose.KinvR, obj_yaw_esti, vp_1, vp_2, vp_3); // for object x y z  axis
+				// std::cout << "vp_1:\n" << vp_1 << std::endl;
+				// std::cout << "vp_2:\n" << vp_2 << std::endl;
+				// std::cout << "vp_3:\n" << vp_3 << std::endl;
+
+				// @PARAM all_vps(3,2) 存储三个消失点.
+				MatrixXd all_vps(3,2);
+				all_vps.row(0) = vp_1;
+				all_vps.row(1) = vp_2;
+				all_vps.row(2) = vp_3;
+
+				// 输出采样的偏航角.
+				std::cout<<"obj_yaw_esti  " << obj_yaw_esti << "  " << obj_yaw_id << std::endl;
+
+				// NOTE 计算每个消失点所对应的两条边的角度.
+				MatrixXd all_vp_bound_edge_angles = VP_support_edge_infos(	all_vps, 				/* 消失点矩阵 3*2 */
+																			edge_mid_pts,			/* 每条线段的中点 n×2 */
+																			lines_inobj_angles,		/* 每条线段的偏角 n×1 */
+																			Vector2d(vp12_edge_angle_thre, vp3_edge_angle_thre));	/* 消失点的两个角度阈值 n×2 */
+				// 		  int sample_top_pt_id=15;
 		  for (int sample_top_pt_id=0;sample_top_pt_id<sample_top_pts.cols();sample_top_pt_id++)
 		  {
 			// 		      std::cout<<"sample_top_pt_id "<<sample_top_pt_id<<std::endl;

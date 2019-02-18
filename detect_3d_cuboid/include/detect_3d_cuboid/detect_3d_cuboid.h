@@ -48,11 +48,11 @@ struct cam_pose_infos
       Eigen::Matrix3d Kalib;              // 3*3的相机内参.
       
       Eigen::Matrix3d rotationToWorld;    // 3*3的旋转矩阵.
-      Eigen::Vector3d euler_angle;        // 3维向量的欧拉角.
-      Eigen::Matrix3d invR;               // TODO 
-      Eigen::Matrix3d invK;               // TODO 
-      Eigen::Matrix<double, 3, 4> projectionMatrix;      
-      Eigen::Matrix3d KinvR;              // K*invR
+      Eigen::Vector3d euler_angle;        // 3维向量的欧拉角，分别表示 roll，pitch和yaw角.
+      Eigen::Matrix3d invR;               // 旋转矩阵的逆.
+      Eigen::Matrix3d invK;               // 相机内参的逆矩阵.
+      Eigen::Matrix<double, 3, 4> projectionMatrix;      // 投影矩阵.
+      Eigen::Matrix3d KinvR;              // Kalib*invR
       double camera_yaw;
 };
 
@@ -95,7 +95,7 @@ public:
       // important mode parameters for proposal generation.
       bool consider_config_1 = true;                  // false true
       bool consider_config_2 = true;                  // TODO 
-      bool whether_sample_cam_roll_pitch = false;     // sample camera roll pitch in case don't have good camera pose TODO
+      bool whether_sample_cam_roll_pitch = true;     // sample camera roll pitch in case don't have good camera pose TODO
       bool whether_sample_bbox_height = false;        // sample object height as raw detection might not be accurate TODO
 
       int max_cuboid_num = 1;  	                  // 最终返回的立方体的个数.
