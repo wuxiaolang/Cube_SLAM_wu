@@ -175,6 +175,7 @@ void atan2_vector(const VectorXd& y_vec, const VectorXd& x_vec, VectorXd& all_an
 }
 
 // remove the jumping angles from -pi to pi.   to make the raw angles smoothly change.
+// BRIEF 从 -pi 到 pi 的顺序移除 jumping angles，使原始角度平滑变化.
 void smooth_jump_angles(const VectorXd& raw_angles,VectorXd& new_angles)
 {
     new_angles = raw_angles;
@@ -194,27 +195,32 @@ void smooth_jump_angles(const VectorXd& raw_angles,VectorXd& new_angles)
 // line_1  4d  line_segment2 4d  the output is float point.
 // compute the intersection of line_1 (from start to end) with line segments (not infinite line). if not found, return [-1 -1]
 // the second line segments are either horizontal or vertical.   a simplified version of lineSegmentIntersect
+// BRIEF 计算 line_1（从pt_start到pt_end）与线段 line_segment2 的交点.
+// 第二条线段是水平线还是垂直线，
 Vector2d seg_hit_boundary(const Vector2d& pt_start, const Vector2d& pt_end, const Vector4d& line_segment2 )
-{         
+{   
+    // 线段 line_segment2 的起点和终点的y坐标.
     Vector2d boundary_bgn = line_segment2.head<2>();
     Vector2d boundary_end = line_segment2.tail<2>();
-  
-    Vector2d direc = pt_end-pt_start;
+
+    // 消失点与上边缘采样点构成线段的长度.
+    Vector2d direc = pt_end - pt_start;
     Vector2d hit_pt(-1,-1);
     
     // line equation is (p_u,p_v)+lambda*(delta_u,delta_v)  parameterized by lambda
+    // 如果是水平边缘，两个点的 y 坐标相等.
     if ( boundary_bgn(1)==boundary_end(1) )   // if an horizontal edge
     {
         double lambd=(boundary_bgn(1)-pt_start(1))/direc(1);
         if (lambd>=0)  // along ray direction
-	{
+        {
             Vector2d hit_pt_tmp = pt_start+lambd*direc;
             if ( (boundary_bgn(0)<=hit_pt_tmp(0)) && (hit_pt_tmp(0)<=boundary_end(0)) )  // inside the segments
-	    {
+            {
                 hit_pt = hit_pt_tmp;
                 hit_pt(1)= boundary_bgn(1);  // floor operations might have un-expected things
+            }
 	    }
-	}
     }    
     if ( boundary_bgn(0)==boundary_end(0) )   // if an vertical edge
     {
@@ -420,22 +426,25 @@ void merge_break_lines( const MatrixXd& all_lines,          /*输入的所有在
 Eigen::MatrixXd VP_support_edge_infos(  Eigen::MatrixXd& VPs,                   /* 消失点矩阵 3*2 */
                                         Eigen::MatrixXd& edge_mid_pts,          /* 每条线段的中点 n×2 */
                                         Eigen::VectorXd& edge_angles,           /* 每条线段的偏角 n×1 */
-				                        Eigen::Vector2d vp_support_angle_thres) /* 消失点的两个角度阈值 n×2 */
+				                        Eigen::Vector2d vp_support_angle_thres) /* 消失点与边的夹角阈值*/
 {
     MatrixXd all_vp_bound_edge_angles = MatrixXd::Ones(3,2) * nan(""); // initialize as nan  use isnan to check
     if (edge_mid_pts.rows() > 0)
     {
+        // 分别处理三个消失点.
         for (int vp_id = 0; vp_id < VPs.rows(); vp_id++)
         {
+            // @PARAM   vp_angle_thre   夹角阈值.
             double vp_angle_thre;
-            if (vp_id!=2)
+            if (vp_id!=2)   /* 消失点 1 2 的夹角阈值.*/
                 vp_angle_thre = vp_support_angle_thres(0)/180.0*M_PI;
-            else
+            else            /* 消失点 3 的夹角阈值.*/
                 vp_angle_thre = vp_support_angle_thres(1)/180.0*M_PI;
         
             std::vector<int> vp_inlier_edge_id;                             // 在范围内的边的 id.
             VectorXd vp_edge_midpt_angle_raw_inlier(edge_angles.rows());    // 边与第 vp_id 个消失点角度差在范围内的角度矩阵.
 
+            // 消失点与每条边的夹角.
             for (int edge_id = 0; edge_id < edge_angles.rows(); edge_id++)
             {
                 // @PARAM   vp1_edge_midpt_angle_raw_i   消失点到边的中点的角度. 
@@ -448,22 +457,34 @@ Eigen::MatrixXd VP_support_edge_infos(  Eigen::MatrixXd& VPs,                   
                 double angle_diff_i = std::abs(edge_angles(edge_id) - vp1_edge_midpt_angle_norm_i);
                 angle_diff_i = std::min(angle_diff_i,M_PI-angle_diff_i);
                 
-                // 如果角度差小于阈值， 保存下与第 edge_id 条边中点的角度
+                // NOTE 如果角度差小于阈值， 保存下与第 edge_id 条边中点的角度
                 if (angle_diff_i < vp_angle_thre)
                 {
                     vp_edge_midpt_angle_raw_inlier(vp_inlier_edge_id.size()) = vp1_edge_midpt_angle_raw_i;
                     vp_inlier_edge_id.push_back(edge_id);
                 }
             }
-
-            if (vp_inlier_edge_id.size()>0) // if found inlier edges
+            
+            // 如果存在在角度阈值内的线段.
+            if (vp_inlier_edge_id.size() > 0) // if found inlier edges
             {
-                VectorXd vp1_edge_midpt_angle_raw_inlier_shift; smooth_jump_angles(vp_edge_midpt_angle_raw_inlier.head(vp_inlier_edge_id.size()),
-                                                vp1_edge_midpt_angle_raw_inlier_shift);
-                int vp1_low_edge_id;	vp1_edge_midpt_angle_raw_inlier_shift.maxCoeff(&vp1_low_edge_id);
-                int vp1_top_edge_id;	vp1_edge_midpt_angle_raw_inlier_shift.minCoeff(&vp1_top_edge_id);
-                if (vp_id>0)
-                std::swap(vp1_low_edge_id,vp1_top_edge_id);  // match matlab code
+                // @PARAM   vp1_edge_midpt_angle_raw_inlier_shift   平滑处理之后的角度.
+                VectorXd vp1_edge_midpt_angle_raw_inlier_shift; 
+                // 角度平滑变化.
+                smooth_jump_angles( vp_edge_midpt_angle_raw_inlier.head(vp_inlier_edge_id.size()),
+                                    vp1_edge_midpt_angle_raw_inlier_shift);
+
+                // 角度最大和最小的边的id
+                int vp1_low_edge_id;	
+                vp1_edge_midpt_angle_raw_inlier_shift.maxCoeff(&vp1_low_edge_id);
+                int vp1_top_edge_id;	
+                vp1_edge_midpt_angle_raw_inlier_shift.minCoeff(&vp1_top_edge_id);
+
+                // TODO 第 2 3 个消失点时交换最大和最小值
+                if (vp_id > 0)
+                    std::swap(vp1_low_edge_id,vp1_top_edge_id);  // match matlab code
+                
+                // NOTE 输出：消失点两边的夹角.
                 all_vp_bound_edge_angles(vp_id,0) = edge_angles(vp_inlier_edge_id[vp1_low_edge_id]);   // it will be 0*1 matrix if not found inlier edges.
                 all_vp_bound_edge_angles(vp_id,1) = edge_angles(vp_inlier_edge_id[vp1_top_edge_id]);
             }

@@ -95,8 +95,8 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat& rgb_img, const Matrix4d& tra
 	all_configs.push_back(consider_config_2);
 
     // TODO：立方体提案生成的一些参数.
-    double vp12_edge_angle_thre = 15; 
-	double vp3_edge_angle_thre = 10;  		// 10  10  parameters
+    double vp12_edge_angle_thre = 15; 		// 消失点 1 2 与边的夹角阈值.
+	double vp3_edge_angle_thre = 10;  		// 消失点 3 与边的夹角阈值.
     double shorted_edge_thre = 20;  		// 边的阈值.if box edge are too short. box might be too thin. most possibly wrong.
     bool reweight_edge_distance = true;  	// if want to compare with all configurations. we need to reweight
 
@@ -106,7 +106,7 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat& rgb_img, const Matrix4d& tra
 	double weight_skew_error = 1.5; 				// NOTE 形状误差的权重，训练的经验值，论文中为 1.5.
     // TODO：if also consider config2, need to weight two erros, in order to compare two configurations
 
-    // TODO：确保边缘线段从左到右？
+    // TODO：确保边缘线段的两个端点是从左到右存储的.
     align_left_right_edges(all_lines_raw); // this should be guaranteed when detecting edges
 	// 显示边缘检测的图.
     if(whether_plot_detail_images)
@@ -357,22 +357,27 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat& rgb_img, const Matrix4d& tra
 				MatrixXd all_vp_bound_edge_angles = VP_support_edge_infos(	all_vps, 				/* 消失点矩阵 3*2 */
 																			edge_mid_pts,			/* 每条线段的中点 n×2 */
 																			lines_inobj_angles,		/* 每条线段的偏角 n×1 */
-																			Vector2d(vp12_edge_angle_thre, vp3_edge_angle_thre));	/* 消失点的两个角度阈值 n×2 */
-				// 		  int sample_top_pt_id=15;
-		  for (int sample_top_pt_id=0;sample_top_pt_id<sample_top_pts.cols();sample_top_pt_id++)
-		  {
-			// 		      std::cout<<"sample_top_pt_id "<<sample_top_pt_id<<std::endl;
-		      Vector2d corner_1_top = sample_top_pts.col(sample_top_pt_id);
-		      bool config_good = true;
-		      int vp_1_position = 0;  // 0 initial as fail,  1  on left   2 on right
-		      Vector2d corner_2_top = seg_hit_boundary(vp_1,corner_1_top,Vector4d(right_x_raw, top_y_raw, right_x_raw, down_y_expan));
-		      if (corner_2_top(0)==-1){  // vp1-corner1 doesn't hit the right boundary. check whether hit left
-			  corner_2_top = seg_hit_boundary(vp_1,corner_1_top,Vector4d(left_x_raw, top_y_raw, left_x_raw, down_y_expan));
-			  if (corner_2_top(0)!=-1) // vp1-corner1 hit the left boundary   vp1 on the right
-			      vp_1_position = 2;
-		      }
-		      else    // vp1-corner1 hit the right boundary   vp1 on the left
-			  vp_1_position = 1;
+																			Vector2d(vp12_edge_angle_thre, vp3_edge_angle_thre));	/* 消失点与各边的夹角阈值*/
+				// int sample_top_pt_id=15;
+				// STEP 遍历上边缘的采样点
+				for (int sample_top_pt_id = 0; sample_top_pt_id < sample_top_pts.cols(); sample_top_pt_id++)
+				{
+					// std::cout << "sample_top_pt_id " << sample_top_pt_id << std::endl;
+					Vector2d corner_1_top = sample_top_pts.col(sample_top_pt_id);
+					bool config_good = true;
+					int vp_1_position = 0;  // 0 initial as fail,  1  on left   2 on right
+
+					Vector2d corner_2_top = seg_hit_boundary(	vp_1,
+																corner_1_top,
+																Vector4d(right_x_raw, top_y_raw, right_x_raw, down_y_expan));
+					if (corner_2_top(0)==-1)
+					{  // vp1-corner1 doesn't hit the right boundary. check whether hit left
+						corner_2_top = seg_hit_boundary(vp_1,corner_1_top,Vector4d(left_x_raw, top_y_raw, left_x_raw, down_y_expan));
+						if (corner_2_top(0)!=-1) // vp1-corner1 hit the left boundary   vp1 on the right
+							vp_1_position = 2;
+					}
+					else    // vp1-corner1 hit the right boundary   vp1 on the left
+					vp_1_position = 1;
 		      
 		      config_good = vp_1_position>0;
 		      if (!config_good){
