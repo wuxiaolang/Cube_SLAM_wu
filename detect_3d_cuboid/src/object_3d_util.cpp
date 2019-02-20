@@ -507,71 +507,104 @@ Eigen::MatrixXd VP_support_edge_infos(  Eigen::MatrixXd& VPs,                   
     return all_vp_bound_edge_angles;
 }
 
-
-
-double box_edge_sum_dists(const cv::Mat& dist_map, const MatrixXd& box_corners_2d, const MatrixXi& edge_pt_ids, bool reweight_edge_distance)
+// BRIEF 计算与距离变换图的距离.
+double box_edge_sum_dists(  const cv::Mat& dist_map,            /* 距离变换图 */
+                            const MatrixXd& box_corners_2d,     /* 8 个顶点的 2D坐标 */
+                            const MatrixXi& edge_pt_ids,        /* 可见的边 */
+                            bool  reweight_edge_distance)
 {
-// give some edges, sample some points on line then sum up distance from dist_map
-// input: visible_edge_pt_ids is n*2  each row stores an edge's two end point's index from box_corners_2d
-// if weight_configs: for configuration 1, there are more visible edges compared to configuration2, so we need to re-weight
-// [1 2;2 3;3 4;4 1;2 6;3 5;4 8;5 8;5 6];  reweight vertical edge id 5-7 by 2/3, horizontal edge id 8-9 by 1/2
-    float sum_dist=0;
-    for (int edge_id=0;edge_id<edge_pt_ids.rows();edge_id++)
+    /*
+    给定一些边，在线采样一些点，求和与 dist_map 的距离；
+    输入：可见的边
+    对于情形 1 ，相比情形 2 有更多的可见边缘，需要对边进行重新加权.
+    give some edges, sample some points on line then sum up distance from dist_map
+    input: visible_edge_pt_ids is n*2  each row stores an edge's two end point's index from box_corners_2d
+    if weight_configs: for configuration 1, there are more visible edges compared to configuration2, so we need to re-weight
+    [1 2;2 3;3 4;4 1;2 6;3 5;4 8;5 8;5 6];  reweight vertical edge id 5-7 by 2/3, horizontal edge id 8-9 by 1/2
+    */
+
+    float sum_dist = 0;
+    // 遍历每一条可见边.
+    for (int edge_id = 0; edge_id < edge_pt_ids.rows(); edge_id++)
     {
-	Vector2d corner_tmp1=box_corners_2d.col(edge_pt_ids(edge_id,0));
-	Vector2d corner_tmp2=box_corners_2d.col(edge_pt_ids(edge_id,1));
-	for (double sample_ind=0;sample_ind<11;sample_ind++)
-	{
-            Vector2d sample_pt = sample_ind/10.0*corner_tmp1+(1-sample_ind/10.0)*corner_tmp2;
-            float dist1 = dist_map.at<float>(int(sample_pt(1)),int(sample_pt(0)));//make sure dist_map is float type
+        // 每条可见边的两个点的 x 坐标的 y 坐标.
+        Vector2d corner_tmp1 = box_corners_2d.col(edge_pt_ids(edge_id,0));
+        Vector2d corner_tmp2 = box_corners_2d.col(edge_pt_ids(edge_id,1));
+
+        for (double sample_ind = 0; sample_ind < 11; sample_ind++)
+        {
+            // 在线段上采样两个点   sample_pt.
+            Vector2d sample_pt = sample_ind/10.0 * corner_tmp1 + (1-sample_ind/10.0) * corner_tmp2;
+
+            // NOTE 计算距离.
+            float dist1 = dist_map.at<float>(int(sample_pt(1)),int(sample_pt(0)));  //make sure dist_map is float type
+            
+            // 是否重新加权
             if (reweight_edge_distance)
-	    {
+            {
                 if ((4<=edge_id) && (edge_id<=5))
                     dist1=dist1*3.0/2.0;
                 if (6==edge_id)
                     dist1=dist1*2.0;
-	    }
-            sum_dist=sum_dist+dist1;
-	}
+            }
+
+            sum_dist = sum_dist + dist1;
+        }
     }
     return double(sum_dist);
 }
 
-
-double box_edge_alignment_angle_error(const MatrixXd& all_vp_bound_edge_angles,const MatrixXi& vps_box_edge_pt_ids, const MatrixXd& box_corners_2d)
+// BRIEF 立方体边缘角度与消失点所对应的角度对齐误差.用于评估立方体质量.
+double box_edge_alignment_angle_error(  const MatrixXd& all_vp_bound_edge_angles,   /* 消失点与边的两个角度 */
+                                        const MatrixXi& vps_box_edge_pt_ids,        /* 每个消失点来源的两条边 */
+                                        const MatrixXd& box_corners_2d)             /* 8 个顶点的 2D坐标 */
 {
 // compute the difference of box edge angle with angle of actually VP aligned image edges. for evaluating the box
 // all_vp_bound_edge_angles: VP aligned actual image angles. 3*2  if not found, nan.      box_corners_2d: 2*8
 // vps_box_edge_pt_ids: % six edges. each row represents two edges [e1_1 e1_2   e2_1 e2_2;...] of one VP
     double total_angle_diff = 0;
     double not_found_penalty = 30.0/180.0*M_PI*2;    // if not found any VP supported lines, give each box edge a constant cost (45 or 30 ? degree)
-    for (int vp_id=0;vp_id<vps_box_edge_pt_ids.rows();vp_id++)
+    
+    // 遍历 3 个消失点分别对应的两条边（四个点）.
+    for (int vp_id = 0; vp_id < vps_box_edge_pt_ids.rows(); vp_id++)
     {
-        Vector2d vp_bound_angles=all_vp_bound_edge_angles.row(vp_id);
-	std::vector<double> vp_bound_angles_valid;
-	for (int i=0;i<2;i++)
-	    if (!std::isnan(vp_bound_angles(i)))
-	       vp_bound_angles_valid.push_back(vp_bound_angles(i));
-	if (vp_bound_angles_valid.size()>0) //  exist valid edges
-	{
-	    for (int ee_id=0;ee_id<2;ee_id++) // find cloeset from two boundary edges. we could also do left-left right-right compare. but pay close attention different vp locations  
-	    {
-		Vector2d two_box_corners_1 = box_corners_2d.col( vps_box_edge_pt_ids(vp_id,2*ee_id) ); // [ x1;y1 ]
-		Vector2d two_box_corners_2 = box_corners_2d.col( vps_box_edge_pt_ids(vp_id,2*ee_id+1) ); // [ x2;y2 ]
-		
-		double box_edge_angle = normalize_to_pi( atan2(two_box_corners_2(1)-two_box_corners_1(1), two_box_corners_2(0)-two_box_corners_1(0)));  // [-pi/2 -pi/2]
-		double angle_diff_temp=100;
-		for (int i=0;i<vp_bound_angles_valid.size();i++)
-		{
-		    double temp = std::abs(box_edge_angle-vp_bound_angles_valid[i]);
-		    temp = std::min( temp, M_PI-temp );
-		    if (temp<angle_diff_temp)
-			angle_diff_temp = temp;
-		}
-                total_angle_diff=total_angle_diff+angle_diff_temp;
-	    }
-	}
-	else
+        // 读取消失点对应的两个角度.
+        Vector2d vp_bound_angles = all_vp_bound_edge_angles.row(vp_id);
+
+        std::vector<double> vp_bound_angles_valid;
+        
+        // 有效角度.
+        for (int i = 0; i < 2; i++)
+            if (!std::isnan(vp_bound_angles(i)))
+                vp_bound_angles_valid.push_back(vp_bound_angles(i));
+
+        if (vp_bound_angles_valid.size() > 0) //  exist valid edges
+        {
+            // 分别得到 由 1 2 或 3 4 个点构成的两条线.
+            for (int ee_id = 0; ee_id < 2; ee_id++) // find cloeset from two boundary edges. we could also do left-left right-right compare. but pay close attention different vp locations  
+            {
+                Vector2d two_box_corners_1 = box_corners_2d.col( vps_box_edge_pt_ids(vp_id, 2*ee_id) );     // 第 1（或3）个点[ x1;y1 ]
+                Vector2d two_box_corners_2 = box_corners_2d.col( vps_box_edge_pt_ids(vp_id, 2*ee_id+1) );   // 第 2（或4）个点[ x2;y2 ]
+                
+                // @PARAM   box_edge_angle      边的角度.
+                double box_edge_angle = normalize_to_pi(atan2(two_box_corners_2(1) - two_box_corners_1(1), 
+                                                        two_box_corners_2(0) - two_box_corners_1(0)));  // [-pi/2 -pi/2]
+
+                double angle_diff_temp = 100;
+                for (int i = 0; i < vp_bound_angles_valid.size(); i++)
+                {
+                    // NOTE 【计算角度误差】，形成消失点的边的角度-消失点与检测到的边缘的角度.
+                    double temp = std::abs(box_edge_angle - vp_bound_angles_valid[i]);
+
+                    temp = std::min( temp, M_PI-temp );
+                    if (temp<angle_diff_temp)
+                        angle_diff_temp = temp;
+                }
+                    total_angle_diff = total_angle_diff + angle_diff_temp;
+            }
+        }
+        // NOTE 如果没有找到形成消失点的边缘，则赋予固定的偏差.
+        else
             total_angle_diff=total_angle_diff+not_found_penalty;
     }
     return total_angle_diff;

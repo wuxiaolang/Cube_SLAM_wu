@@ -89,7 +89,7 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat& rgb_img, const Matrix4d& tra
     int num_2d_objs = obj_bbox_coors.rows();
     all_object_cuboids.resize(num_2d_objs);
 
-	// TODO：这个参数是什么作用？
+	// @PARAM all_configs	每帧视图的模式：1.观察到三个面；2.观察到两个面；3.观察到一个面.
     vector<bool> all_configs;
 	all_configs.push_back(consider_config_1);
 	all_configs.push_back(consider_config_2);
@@ -298,9 +298,9 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat& rgb_img, const Matrix4d& tra
 			}
 
 			// STEP 生成立方体
-			MatrixXd all_configs_error_one_objH(200,9);    
-			MatrixXd all_box_corners_2d_one_objH(400,8); 
-			int valid_config_number_one_objH = 0;
+			MatrixXd all_configs_error_one_objH(200,9);   		// 误差. 
+			MatrixXd all_box_corners_2d_one_objH(400,8); 		// 2D坐标
+			int valid_config_number_one_objH = 0;				// 有效测两次熟
 
 		  	// 采样相机 roll pitch 角，在相机偏角的+-6°每隔3°采样一个值 或者 直接使用相机的roll pitch角.
 	      	std::vector<double> cam_roll_samples; 
@@ -417,8 +417,10 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat& rgb_img, const Matrix4d& tra
 							continue;
 
 						// @PARAM corner_4_top	消失点2-上边缘采样点射线与左右边界的交点.
+						// NOTE 代码中的 3 4 与论文中相反，代码中的第三个点对应论文中第四个点.
 						Vector2d corner_3_top, corner_4_top;
 
+						// NOTE 第一种情形，可以观察到物体的三个面.
 						if (config_id == 1)
 						{
 							// STEP 计算消失点 2 与左右边界的交点(第三个点).
@@ -469,121 +471,188 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat& rgb_img, const Matrix4d& tra
 							//cout<<"corner_3/4   "<<corner_3_top.transpose()<<"   "<<corner_4_top.transpose()<<endl;
 						}
 
+						// NOTE 第二种情形，可以观察到物体的两个面.
 						if (config_id==2)
 						{
+							// STEP 计算消失点2——顶点2与左侧边界的交点（第三个点）.
+							// 如果消失点1在左侧，则其交点在右侧
 							if (vp_1_position==1)   // then vp2 hit the left boundary
-							corner_3_top = seg_hit_boundary(vp_2, corner_2_top,Vector4d(left_x_raw, top_y_raw, left_x_raw, down_y_expan));
+								corner_3_top = seg_hit_boundary(vp_2, corner_2_top, Vector4d(left_x_raw, top_y_raw, left_x_raw, down_y_expan));
 							else  // or, then vp2 hit the right boundary
-							corner_3_top = seg_hit_boundary(vp_2, corner_2_top,Vector4d(right_x_raw, top_y_raw, right_x_raw, down_y_expan));
-							if (corner_3_top(1)==-1){
+								corner_3_top = seg_hit_boundary(vp_2, corner_2_top, Vector4d(right_x_raw, top_y_raw, right_x_raw, down_y_expan));
+							
+							// 检查.
+							if (corner_3_top(1)==-1)
+							{
+								config_good = false; 
+								if (print_details)  
+									printf("Configuration %d fails at corner 3, outside segment\n",config_id); 
+								continue;
+							}
+							if ((corner_2_top-corner_3_top).norm()<shorted_edge_thre)
+							{
+								if (print_details) 
+									printf("Configuration %d fails at edge 2-3, too short\n",config_id);
+								continue;
+							}
+
+							// STEP 计算立方体上边缘第四个点（最后一个点）
+							corner_4_top = lineSegmentIntersect(vp_1, corner_3_top, vp_2, corner_1_top, true);
+							
+							// 检查.
+							if (!check_inside_box( corner_4_top, Vector2d(left_x_raw,top_y_expan_distmap), Vector2d(right_x_raw, down_y_expan_distmap)))
+							{
+								config_good=false;
+								if (print_details) 
+									printf("Configuration %d fails at corner 4, outside box\n",config_id); 
+								continue;
+							}
+							if ( ((corner_3_top-corner_4_top).norm()<shorted_edge_thre) || ((corner_4_top-corner_1_top).norm()<shorted_edge_thre) )
+							{
+								if (print_details) 
+									printf("Configuration %d fails at edge 3-4/4-1, too short\n",config_id); 
+								continue;
+							}
+
+							// 输出情形2中立方体上边缘第三四个点的位置.
+							// cout<<"corner_3/4   "<<corner_3_top.transpose()<<"   "<<corner_4_top.transpose()<<endl;
+						}
+
+						// compute first bottom points    computing bottom points is the same for config 1,2
+						// NOTE 计算底部点（情形 1 和 2 的计算方法一样）
+						// STEP 计算第五个点	vp3—4线段与边界框下边界的交点
+						Vector2d corner_5_down = seg_hit_boundary(vp_3, corner_3_top, Vector4d(left_x_raw, down_y_expan, right_x_raw, down_y_expan));
+						// 检查.
+						if (corner_5_down(1)==-1){
 							config_good = false; 
-							if (print_details)  printf("Configuration %d fails at corner 3, outside segment\n",config_id); 
+							if (print_details) printf("Configuration %d fails at corner 5, outside segment\n",config_id); 
 							continue;
-							}
-							if ((corner_2_top-corner_3_top).norm()<shorted_edge_thre){
-							if (print_details) printf("Configuration %d fails at edge 2-3, too short\n",config_id);
+						}
+						if ((corner_3_top-corner_5_down).norm()<shorted_edge_thre){
+							if (print_details) printf("Configuration %d fails at edge 3-5, too short\n",config_id); 
 							continue;
-							}
-							// compute the last point in the top face
-							corner_4_top=lineSegmentIntersect(vp_1,corner_3_top,vp_2,corner_1_top,true);
-							if (!check_inside_box( corner_4_top, Vector2d(left_x_raw,top_y_expan_distmap), Vector2d(right_x_raw, down_y_expan_distmap))){
-							config_good=false;
-							if (print_details) printf("Configuration %d fails at corner 4, outside box\n",config_id); 
+						}
+
+						// STEP 计算第 6 个点	vp2—5线段与vp3—2的交点.
+						Vector2d corner_6_down = lineSegmentIntersect(vp_2, corner_5_down, vp_3, corner_2_top, true);
+						if (!check_inside_box( corner_6_down, expan_distmap_lefttop, expan_distmap_rightbottom)){
+							config_good=false;  
+							if (print_details) printf("Configuration %d fails at corner 6, outside box\n",config_id); 
 							continue;
-							}
-							if ( ((corner_3_top-corner_4_top).norm()<shorted_edge_thre) || ((corner_4_top-corner_1_top).norm()<shorted_edge_thre) ){
-							if (print_details) printf("Configuration %d fails at edge 3-4/4-1, too short\n",config_id); 
+						}
+						if ( ((corner_6_down-corner_2_top).norm()<shorted_edge_thre) || ((corner_6_down-corner_5_down).norm()<shorted_edge_thre) ){
+							if (print_details) printf("Configuration %d fails at edge 6-5/6-2, too short\n",config_id); 
 							continue;
-							}
-						// 			      cout<<"corner_3/4   "<<corner_3_top.transpose()<<"   "<<corner_4_top.transpose()<<endl;
+						}
+
+						// STEP 计算第 7 个点	vp1—6线段与vp3—1的交点.
+						Vector2d corner_7_down=lineSegmentIntersect(vp_1, corner_6_down, vp_3, corner_1_top, true);
+						if (!check_inside_box( corner_7_down, expan_distmap_lefttop, expan_distmap_rightbottom)){// might be slightly different from matlab
+							config_good=false;  
+							if (print_details) printf("Configuration %d fails at corner 7, outside box\n",config_id); 
+							continue;
+						}
+						if ( ((corner_7_down-corner_1_top).norm()<shorted_edge_thre) || ((corner_7_down-corner_6_down).norm()<shorted_edge_thre) ){
+							if (print_details) printf("Configuration %d fails at edge 7-1/7-6, too short\n",config_id); 
+							continue;
+						}
+
+						// STEP 计算第 8 个点	vp1—5线段与vp5—7的交点.
+						Vector2d corner_8_down=lineSegmentIntersect(vp_1,corner_5_down,vp_2, corner_7_down,true);
+						if (!check_inside_box( corner_8_down, expan_distmap_lefttop, expan_distmap_rightbottom)){
+							config_good=false;  
+							if (print_details) printf("Configuration %d fails at corner 8, outside box\n",config_id); 
+							continue;
+						}
+						if ( ((corner_8_down-corner_4_top).norm()<shorted_edge_thre) || ((corner_8_down-corner_5_down).norm()<shorted_edge_thre) || ((corner_8_down-corner_7_down).norm()<shorted_edge_thre)){
+							if (print_details) printf("Configuration %d fails at edge 8-4/8-5/8-7, too short\n",config_id); 
+							continue;
+						}
+			  
+						// @PARAM box_corners_2d_float	存储物体的 8 个顶点（2D）.
+						MatrixXd box_corners_2d_float(2,8);
+						box_corners_2d_float << 	corner_1_top, corner_2_top, corner_3_top, corner_4_top, 
+													corner_5_down, corner_6_down, corner_7_down, corner_8_down;
+						// std::cout<<"box_corners_2d_float \n "<<box_corners_2d_float<<std::endl;
+						
+						// @PARAM box_corners_2d_float_shift 8 个顶点x坐标距离左边边界框边界的距离和 y坐标距离上边边界的距离（以检测框左上边界为轴的坐标）.
+						MatrixXd box_corners_2d_float_shift(2,8);
+						box_corners_2d_float_shift.row(0) = box_corners_2d_float.row(0).array() - left_x_expan_distmap;
+						box_corners_2d_float_shift.row(1) = box_corners_2d_float.row(1).array() - top_y_expan_distmap;
+
+						MatrixXi visible_edge_pt_ids, vps_box_edge_pt_ids;
+						double sum_dist;
+						
+						// STEP 计算距离变换图的距离，第一种情形.
+						if (config_id == 1)
+						{
+							// 可以看到三个面，共9条边.
+							visible_edge_pt_ids.resize(9,2); 
+							visible_edge_pt_ids << 1,2, 2,3, 3,4, 4,1, 2,6, 3,5, 4,8, 5,8, 5,6;
+							
+							// 计算三个消失点所需要的两条边
+							vps_box_edge_pt_ids.resize(3,4); 
+							// 1_2 与 8_5 交点得到vp1	4_1 与 5_6 交点得到vp1	
+							vps_box_edge_pt_ids << 1,2,8,5, 4,1,5,6, 4,8,2,6; // six edges. each row represents two edges [e1_1 e1_2   e2_1 e2_2;...] of one VP
+							
+							visible_edge_pt_ids.array() -=1; 
+							vps_box_edge_pt_ids.array() -=1; //change to c++ index
+							
+							// TODO  计算距离	dist_map？？
+							sum_dist = box_edge_sum_dists(dist_map, box_corners_2d_float_shift, visible_edge_pt_ids);
+						}
+						// 第二种情况.
+						else
+						{
+							visible_edge_pt_ids.resize(7,2); 
+							visible_edge_pt_ids<<1,2, 2,3, 3,4, 4,1, 2,6, 3,5, 5,6;
+							vps_box_edge_pt_ids.resize(3,4); 
+							vps_box_edge_pt_ids<<1,2,3,4, 4,1,5,6, 3,5,2,6; // six edges. each row represents two edges [e1_1 e1_2   e2_1 e2_2;...] of one VP				  
+							visible_edge_pt_ids.array() -=1; 
+							vps_box_edge_pt_ids.array() -=1;
+							sum_dist = box_edge_sum_dists(dist_map, box_corners_2d_float_shift, visible_edge_pt_ids, reweight_edge_distance);
 						}
 						
-			  // compute first bottom points    computing bottom points is the same for config 1,2
-			  Vector2d corner_5_down = seg_hit_boundary(vp_3, corner_3_top,Vector4d(left_x_raw,down_y_expan,right_x_raw,down_y_expan));
-			  if (corner_5_down(1)==-1){
-			      config_good = false; 
-			      if (print_details) printf("Configuration %d fails at corner 5, outside segment\n",config_id); 
-			      continue;
-			  }
-			  if ((corner_3_top-corner_5_down).norm()<shorted_edge_thre){
-			      if (print_details) printf("Configuration %d fails at edge 3-5, too short\n",config_id); 
-			      continue;
-			  }
-			  Vector2d corner_6_down=lineSegmentIntersect(vp_2,corner_5_down,vp_3, corner_2_top,true);
-			  if (!check_inside_box( corner_6_down, expan_distmap_lefttop, expan_distmap_rightbottom)){
-			      config_good=false;  
-			      if (print_details) printf("Configuration %d fails at corner 6, outside box\n",config_id); 
-			      continue;
-			  }
-			  if ( ((corner_6_down-corner_2_top).norm()<shorted_edge_thre) || ((corner_6_down-corner_5_down).norm()<shorted_edge_thre) ){
-			      if (print_details) printf("Configuration %d fails at edge 6-5/6-2, too short\n",config_id); 
-			      continue;
-			  }
-			  Vector2d corner_7_down=lineSegmentIntersect(vp_1,corner_6_down,vp_3, corner_1_top,true);
-			  if (!check_inside_box( corner_7_down, expan_distmap_lefttop, expan_distmap_rightbottom)){// might be slightly different from matlab
-			      config_good=false;  
-			      if (print_details) printf("Configuration %d fails at corner 7, outside box\n",config_id); 
-			      continue;
-			  }
-			  if ( ((corner_7_down-corner_1_top).norm()<shorted_edge_thre) || ((corner_7_down-corner_6_down).norm()<shorted_edge_thre) ){
-			      if (print_details) printf("Configuration %d fails at edge 7-1/7-6, too short\n",config_id); 
-			      continue;
-			  }
-			  Vector2d corner_8_down=lineSegmentIntersect(vp_1,corner_5_down,vp_2, corner_7_down,true);
-			  if (!check_inside_box( corner_8_down, expan_distmap_lefttop, expan_distmap_rightbottom)){
-			      config_good=false;  
-			      if (print_details) printf("Configuration %d fails at corner 8, outside box\n",config_id); 
-			      continue;
-			  }
-			  if ( ((corner_8_down-corner_4_top).norm()<shorted_edge_thre) || ((corner_8_down-corner_5_down).norm()<shorted_edge_thre) || ((corner_8_down-corner_7_down).norm()<shorted_edge_thre)){
-			      if (print_details) printf("Configuration %d fails at edge 8-4/8-5/8-7, too short\n",config_id); 
-			      continue;
-			  }
-			  
-			  MatrixXd box_corners_2d_float(2,8);
-			  box_corners_2d_float<<corner_1_top,corner_2_top,corner_3_top,corner_4_top,corner_5_down,corner_6_down,corner_7_down,corner_8_down;
-			// 			  std::cout<<"box_corners_2d_float \n "<<box_corners_2d_float<<std::endl;
-			  MatrixXd box_corners_2d_float_shift(2,8);box_corners_2d_float_shift.row(0)=box_corners_2d_float.row(0).array()-left_x_expan_distmap;
-			  box_corners_2d_float_shift.row(1)=box_corners_2d_float.row(1).array()-top_y_expan_distmap;
+						// STEP 计算角度误差.
+						double total_angle_diff = box_edge_alignment_angle_error(	all_vp_bound_edge_angles,	/* 消失点与边的两个角度 */
+																					vps_box_edge_pt_ids,		/* 每个消失点来源的两条边 */
+																					box_corners_2d_float);		/* 8 个顶点的 2D坐标 */
 
-			  MatrixXi visible_edge_pt_ids,vps_box_edge_pt_ids;
-			  double sum_dist;
-			  if (config_id==1)
-			  {
-			      visible_edge_pt_ids.resize(9,2); visible_edge_pt_ids<<1,2, 2,3, 3,4, 4,1, 2,6, 3,5, 4,8, 5,8, 5,6;
-			      vps_box_edge_pt_ids.resize(3,4); vps_box_edge_pt_ids<<1,2,8,5, 4,1,5,6, 4,8,2,6; // six edges. each row represents two edges [e1_1 e1_2   e2_1 e2_2;...] of one VP
-			      visible_edge_pt_ids.array() -=1; vps_box_edge_pt_ids.array() -=1; //change to c++ index
-			      sum_dist = box_edge_sum_dists(dist_map,box_corners_2d_float_shift,visible_edge_pt_ids);
-			  }
-			  else
-			  {
-			      visible_edge_pt_ids.resize(7,2); visible_edge_pt_ids<<1,2, 2,3, 3,4, 4,1, 2,6, 3,5, 5,6;
-			      vps_box_edge_pt_ids.resize(3,4); vps_box_edge_pt_ids<<1,2,3,4, 4,1,5,6, 3,5,2,6; // six edges. each row represents two edges [e1_1 e1_2   e2_1 e2_2;...] of one VP				  
-			      visible_edge_pt_ids.array() -=1; vps_box_edge_pt_ids.array() -=1;
-			      sum_dist = box_edge_sum_dists(dist_map,box_corners_2d_float_shift,visible_edge_pt_ids,reweight_edge_distance);
-			  }
-			  double total_angle_diff = box_edge_alignment_angle_error(all_vp_bound_edge_angles,vps_box_edge_pt_ids,box_corners_2d_float);
-			  all_configs_error_one_objH.row(valid_config_number_one_objH).head<4>()=Vector4d(config_id, vp_1_position, obj_yaw_esti,sample_top_pt_id);
-			  all_configs_error_one_objH.row(valid_config_number_one_objH).segment<3>(4) = Vector3d(sum_dist/obj_diaglength_expan, total_angle_diff, down_expand_sample);
-			  if (whether_sample_cam_roll_pitch)
-			      all_configs_error_one_objH.row(valid_config_number_one_objH).segment<2>(7) = Vector2d(cam_roll_samples[cam_roll_id],cam_pitch_samples[cam_pitch_id]);
-			  else
-			      all_configs_error_one_objH.row(valid_config_number_one_objH).segment<2>(7) = Vector2d(cam_pose_raw.euler_angle(0),cam_pose_raw.euler_angle(1));
-			  all_box_corners_2d_one_objH.block(2*valid_config_number_one_objH,0,2,8)=box_corners_2d_float;
-			  valid_config_number_one_objH++;
-			  if (valid_config_number_one_objH>=all_configs_error_one_objH.rows())
-			  {
-			      all_configs_error_one_objH.conservativeResize(2*valid_config_number_one_objH,NoChange);
-			      all_box_corners_2d_one_objH.conservativeResize(4*valid_config_number_one_objH,NoChange);
-			  }
-		      } //end of config loop
-		  } //end of top id
-	      } //end of yaw
+						// @PARAM 	all_configs_error_one_objH	存储所有的误差.
+						all_configs_error_one_objH.row(valid_config_number_one_objH).head<4>() = Vector4d(	config_id, 			/* 模式 */
+																											vp_1_position, 		/* vp1的位置 */
+																											obj_yaw_esti, 		/* 偏航角采样 */
+																											sample_top_pt_id);	/* 上边缘采样点 */
+						all_configs_error_one_objH.row(valid_config_number_one_objH).segment<3>(4) = Vector3d(	sum_dist/obj_diaglength_expan, 	/* 平均距离误差？ */
+																												total_angle_diff, 				/* 角度误差 */
+																												down_expand_sample);			/* 高度？受是否采样了高度影响？ */
+						// 是否采样相机的 roll 和 pitch 角.
+						if (whether_sample_cam_roll_pitch)
+							all_configs_error_one_objH.row(valid_config_number_one_objH).segment<2>(7) = Vector2d(	cam_roll_samples[cam_roll_id],		/* 采样相机 roll 角 */
+																													cam_pitch_samples[cam_pitch_id]);	/* 采样相机 pitch 角 */
+						else
+							all_configs_error_one_objH.row(valid_config_number_one_objH).segment<2>(7) = Vector2d(	cam_pose_raw.euler_angle(0),
+																													cam_pose_raw.euler_angle(1));
+						
+						// TODO 所有情况下的物体的八个顶点的 2D坐标？
+						all_box_corners_2d_one_objH.block(2*valid_config_number_one_objH,0,2,8) = box_corners_2d_float;
+
+						// 有效的测量？？
+						valid_config_number_one_objH++;
+
+						if (valid_config_number_one_objH >= all_configs_error_one_objH.rows())
+						{
+							all_configs_error_one_objH.conservativeResize(2*valid_config_number_one_objH,NoChange);
+							all_box_corners_2d_one_objH.conservativeResize(4*valid_config_number_one_objH,NoChange);
+						}
+		      		} //end of config loop
+		  		} //end of top id
+	      	} //end of yaw
 	      
-// 	      std::cout<<"valid_config_number_one_hseight  "<<valid_config_number_one_objH<<std::endl;
-// 	      std::cout<<"all_configs_error_one_objH  \n"<<all_configs_error_one_objH.topRows(valid_config_number_one_objH)<<std::endl;
-// 	      MatrixXd all_corners = all_box_corners_2d_one_objH.topRows(2*valid_config_number_one_objH);
-// 	      std::cout<<"all corners   "<<all_corners<<std::endl;
+			// std::cout << "valid_config_number_one_hseight  " << valid_config_number_one_objH << std::endl;
+			// std::cout << "all_configs_error_one_objH  \n" << all_configs_error_one_objH.topRows(valid_config_number_one_objH) << std::endl;
+			// MatrixXd all_corners = all_box_corners_2d_one_objH.topRows(2*valid_config_number_one_objH);
+			// std::cout<<"all corners   "<<all_corners<<std::endl;
 
 	      VectorXd normalized_score; vector<int> good_proposal_ids;
 	      fuse_normalize_scores_v2(all_configs_error_one_objH.col(4).head(valid_config_number_one_objH), all_configs_error_one_objH.col(5).head(valid_config_number_one_objH),
