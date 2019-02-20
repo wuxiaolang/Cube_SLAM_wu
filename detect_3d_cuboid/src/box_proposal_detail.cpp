@@ -363,94 +363,141 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat& rgb_img, const Matrix4d& tra
 				for (int sample_top_pt_id = 0; sample_top_pt_id < sample_top_pts.cols(); sample_top_pt_id++)
 				{
 					// std::cout << "sample_top_pt_id " << sample_top_pt_id << std::endl;
+					// STEP 采样得到立方体上边缘的第一个点.
+					// @PARAM corner_1_top 当前采样点.
 					Vector2d corner_1_top = sample_top_pts.col(sample_top_pt_id);
 					bool config_good = true;
+
+					// @PARAM vp_1_position	消失点1的位置，1 是左边，2 是右边.
 					int vp_1_position = 0;  // 0 initial as fail,  1  on left   2 on right
 
-					Vector2d corner_2_top = seg_hit_boundary(	vp_1,
-																corner_1_top,
-																Vector4d(right_x_raw, top_y_raw, right_x_raw, down_y_expan));
-					if (corner_2_top(0)==-1)
-					{  // vp1-corner1 doesn't hit the right boundary. check whether hit left
-						corner_2_top = seg_hit_boundary(vp_1,corner_1_top,Vector4d(left_x_raw, top_y_raw, left_x_raw, down_y_expan));
-						if (corner_2_top(0)!=-1) // vp1-corner1 hit the left boundary   vp1 on the right
+					// STEP 计算立方体上边缘的第二个点.
+					// NOTE 检查【消失点1-上边缘采样点的射线是否与右边边界有交集】.
+					// @PARAM corner_2_top 消失点1-上边缘采样点射线与边界框左右边界的交点.
+					Vector2d corner_2_top = seg_hit_boundary(	vp_1,				/* 消失点 */
+																corner_1_top,		/* 上边缘的采样点 */
+																Vector4d(right_x_raw, top_y_raw, right_x_raw, down_y_expan) /* 右边边缘 */);
+					// NOTE 如果消失点1-上边缘采样点的连线与右边边缘没有交集，再检查【是否与左边边缘有交集】.
+					if (corner_2_top(0) == -1)
+					{  	// vp1-corner1 doesn't hit the right boundary. check whether hit left
+						corner_2_top = seg_hit_boundary(	vp_1,
+															corner_1_top,
+															Vector4d(left_x_raw, top_y_raw, left_x_raw, down_y_expan));
+						// 如果与左边边界有交集，说明消失点在右边（2）
+						if (corner_2_top(0) != -1) // vp1-corner1 hit the left boundary   vp1 on the right
 							vp_1_position = 2;
 					}
+					// 如果与右边边界有交集，说明消失点在左边（1）
 					else    // vp1-corner1 hit the right boundary   vp1 on the left
-					vp_1_position = 1;
+						vp_1_position = 1;
 		      
-		      config_good = vp_1_position>0;
-		      if (!config_good){
-			  if (print_details) printf("Configuration fails at corner 2, outside segment\n"); 
-			  continue;
-		      }
-		      if ((corner_1_top-corner_2_top).norm()<shorted_edge_thre){
-			  if (print_details) printf("Configuration fails at edge 1-2, too short\n"); 
-			  continue;
-		      }
-				// 		      cout<<"corner_1/2   "<<corner_1_top.transpose()<<"   "<<corner_2_top.transpose()<<endl;
-				// 		      int config_ind=0; // have to consider config now.
-		      for (int config_id=1;config_id<3;config_id++)  // configuration one or two of matlab version
-		      {
-			  if (!all_configs[config_id-1])  
-			      continue;
-			  Vector2d corner_3_top,corner_4_top;
-			  if (config_id==1)
-			  {
-			      if (vp_1_position==1)   // then vp2 hit the left boundary
-				  corner_4_top = seg_hit_boundary(vp_2, corner_1_top,Vector4d(left_x_raw, top_y_raw, left_x_raw, down_y_expan));
-			      else  // or, then vp2 hit the right boundary
-				  corner_4_top = seg_hit_boundary(vp_2, corner_1_top,Vector4d(right_x_raw, top_y_raw, right_x_raw, down_y_expan));
-			      if (corner_4_top(1)==-1){
-				  config_good = false;
-				  if (print_details)  printf("Configuration %d fails at corner 4, outside segment\n",config_id); 
-				  continue;
-			      }
-			      if ((corner_1_top-corner_4_top).norm()<shorted_edge_thre){
-				  if (print_details) printf("Configuration %d fails at edge 1-4, too short\n",config_id);
-				  continue;
-			      }
-			      // compute the last point in the top face
-			      corner_3_top=lineSegmentIntersect(vp_2,corner_2_top,vp_1,corner_4_top,true);
-			      if (!check_inside_box( corner_3_top, Vector2d(left_x_raw,top_y_raw), Vector2d(right_x_raw, down_y_expan))){    // check inside boundary. otherwise edge visibility might be wrong
-				  config_good=false;  
-				  if (print_details) printf("Configuration %d fails at corner 3, outside box\n",config_id); 
-				  continue;
-			      }
-			      if ( ((corner_3_top-corner_4_top).norm()<shorted_edge_thre) || ((corner_3_top-corner_2_top).norm()<shorted_edge_thre) ){
-				  if (print_details) printf("Configuration %d fails at edge 3-4/3-2, too short\n",config_id); 
-				  continue;
-			      }
-			// 			      cout<<"corner_3/4   "<<corner_3_top.transpose()<<"   "<<corner_4_top.transpose()<<endl;
-			  }
-			  if (config_id==2)
-			  {
-			      if (vp_1_position==1)   // then vp2 hit the left boundary
-				  corner_3_top = seg_hit_boundary(vp_2, corner_2_top,Vector4d(left_x_raw, top_y_raw, left_x_raw, down_y_expan));
-			      else  // or, then vp2 hit the right boundary
-				  corner_3_top = seg_hit_boundary(vp_2, corner_2_top,Vector4d(right_x_raw, top_y_raw, right_x_raw, down_y_expan));
-			      if (corner_3_top(1)==-1){
-				  config_good = false; 
-				  if (print_details)  printf("Configuration %d fails at corner 3, outside segment\n",config_id); 
-				  continue;
-			      }
-			      if ((corner_2_top-corner_3_top).norm()<shorted_edge_thre){
-				  if (print_details) printf("Configuration %d fails at edge 2-3, too short\n",config_id);
-				  continue;
-			      }
-			      // compute the last point in the top face
-			      corner_4_top=lineSegmentIntersect(vp_1,corner_3_top,vp_2,corner_1_top,true);
-			      if (!check_inside_box( corner_4_top, Vector2d(left_x_raw,top_y_expan_distmap), Vector2d(right_x_raw, down_y_expan_distmap))){
-				  config_good=false;
-				  if (print_details) printf("Configuration %d fails at corner 4, outside box\n",config_id); 
-				  continue;
-			      }
-			      if ( ((corner_3_top-corner_4_top).norm()<shorted_edge_thre) || ((corner_4_top-corner_1_top).norm()<shorted_edge_thre) ){
-				  if (print_details) printf("Configuration %d fails at edge 3-4/4-1, too short\n",config_id); 
-				  continue;
-			      }
-			// 			      cout<<"corner_3/4   "<<corner_3_top.transpose()<<"   "<<corner_4_top.transpose()<<endl;
-			  }
+			  		// 检查消失点与采样点配置.
+					config_good = vp_1_position > 0;
+					if (!config_good)
+					{
+						if (print_details) 
+							printf("Configuration fails at corner 2, outside segment\n"); 
+						continue;
+					}
+					// 上边缘采样点与边界上的交集点（消失点1）的距离
+					if ((corner_1_top - corner_2_top).norm() < shorted_edge_thre)
+					{
+						if (print_details) 
+							printf("Configuration fails at edge 1-2, too short\n"); 
+						continue;
+					}
+
+					// 输出立方体上边缘第一二个点的位置.
+					// cout << "上边缘采样点1和交点corner_1/2   " << corner_1_top.transpose() << "   " << corner_2_top.transpose() << endl;
+
+					// int config_ind = 0; // have to consider config now.
+					for (int config_id = 1; config_id < 3; config_id++)  // configuration one or two of matlab version
+					{
+						if (!all_configs[config_id-1])  
+							continue;
+
+						// @PARAM corner_4_top	消失点2-上边缘采样点射线与左右边界的交点.
+						Vector2d corner_3_top, corner_4_top;
+
+						if (config_id == 1)
+						{
+							// STEP 计算消失点 2 与左右边界的交点(第三个点).
+							// 如果消失点 1 在左边，则消失点vp2在右边，与左侧边界有交点 corner_4_top
+							if (vp_1_position == 1)   // then vp2 hit the left boundary
+								corner_4_top = seg_hit_boundary(vp_2, corner_1_top, Vector4d(left_x_raw, top_y_raw, left_x_raw, down_y_expan));
+							// 如果消失点 1 在右边，则消失点vp2在左边，与右侧边界有交点 corner_4_top
+							else  // or, then vp2 hit the right boundary
+								corner_4_top = seg_hit_boundary(vp_2, corner_1_top, Vector4d(right_x_raw, top_y_raw, right_x_raw, down_y_expan));
+							
+							// 如果没有交点.
+							if (corner_4_top(1) == -1)	// TODO 这里用的y坐标 corner_4_top(1)，前面用的x坐标corner_2_top(0)？？
+							{
+								config_good = false;
+								if (print_details)  
+									printf("Configuration %d fails at corner 4, outside segment\n",config_id); 
+								continue;
+							}
+
+							// 上边缘采样点与边界上的交集点（消失点2）的距离
+							if ((corner_1_top - corner_4_top).norm() < shorted_edge_thre)
+							{
+								if (print_details) 
+									printf("Configuration %d fails at edge 1-4, too short\n",config_id);
+								continue;
+							}
+
+							// compute the last point in the top face
+							// STEP 计算立方体上边缘第四个点（最后一个点）
+							corner_3_top = lineSegmentIntersect(vp_2, corner_2_top, vp_1, corner_4_top, true);
+							
+							// 检查.
+							if (!check_inside_box( corner_3_top, Vector2d(left_x_raw,top_y_raw), Vector2d(right_x_raw, down_y_expan)))
+							{    // check inside boundary. otherwise edge visibility might be wrong
+								config_good = false;  
+								if (print_details) 
+									printf("Configuration %d fails at corner 3, outside box\n",config_id); 
+								continue;
+							}
+							if ( ((corner_3_top-corner_4_top).norm()<shorted_edge_thre) || ((corner_3_top-corner_2_top).norm()<shorted_edge_thre) )
+							{
+								if (print_details) 
+									printf("Configuration %d fails at edge 3-4/3-2, too short\n",config_id); 
+								continue;
+							}
+							
+							// 输出立方体上边缘第三四个点的位置.
+							//cout<<"corner_3/4   "<<corner_3_top.transpose()<<"   "<<corner_4_top.transpose()<<endl;
+						}
+
+						if (config_id==2)
+						{
+							if (vp_1_position==1)   // then vp2 hit the left boundary
+							corner_3_top = seg_hit_boundary(vp_2, corner_2_top,Vector4d(left_x_raw, top_y_raw, left_x_raw, down_y_expan));
+							else  // or, then vp2 hit the right boundary
+							corner_3_top = seg_hit_boundary(vp_2, corner_2_top,Vector4d(right_x_raw, top_y_raw, right_x_raw, down_y_expan));
+							if (corner_3_top(1)==-1){
+							config_good = false; 
+							if (print_details)  printf("Configuration %d fails at corner 3, outside segment\n",config_id); 
+							continue;
+							}
+							if ((corner_2_top-corner_3_top).norm()<shorted_edge_thre){
+							if (print_details) printf("Configuration %d fails at edge 2-3, too short\n",config_id);
+							continue;
+							}
+							// compute the last point in the top face
+							corner_4_top=lineSegmentIntersect(vp_1,corner_3_top,vp_2,corner_1_top,true);
+							if (!check_inside_box( corner_4_top, Vector2d(left_x_raw,top_y_expan_distmap), Vector2d(right_x_raw, down_y_expan_distmap))){
+							config_good=false;
+							if (print_details) printf("Configuration %d fails at corner 4, outside box\n",config_id); 
+							continue;
+							}
+							if ( ((corner_3_top-corner_4_top).norm()<shorted_edge_thre) || ((corner_4_top-corner_1_top).norm()<shorted_edge_thre) ){
+							if (print_details) printf("Configuration %d fails at edge 3-4/4-1, too short\n",config_id); 
+							continue;
+							}
+						// 			      cout<<"corner_3/4   "<<corner_3_top.transpose()<<"   "<<corner_4_top.transpose()<<endl;
+						}
+						
 			  // compute first bottom points    computing bottom points is the same for config 1,2
 			  Vector2d corner_5_down = seg_hit_boundary(vp_3, corner_3_top,Vector4d(left_x_raw,down_y_expan,right_x_raw,down_y_expan));
 			  if (corner_5_down(1)==-1){

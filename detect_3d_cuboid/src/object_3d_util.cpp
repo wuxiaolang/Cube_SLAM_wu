@@ -195,70 +195,84 @@ void smooth_jump_angles(const VectorXd& raw_angles,VectorXd& new_angles)
 // line_1  4d  line_segment2 4d  the output is float point.
 // compute the intersection of line_1 (from start to end) with line segments (not infinite line). if not found, return [-1 -1]
 // the second line segments are either horizontal or vertical.   a simplified version of lineSegmentIntersect
-// BRIEF 计算 line_1（从pt_start到pt_end）与线段 line_segment2 的交点.
+
+// BRIEF    seg_hit_boundary    检查消失点-上边缘采样点的射线是否与边界框的左右边界有交集，没有交集则返回 [-1 -1].
 // 第二条线段是水平线还是垂直线，
 Vector2d seg_hit_boundary(const Vector2d& pt_start, const Vector2d& pt_end, const Vector4d& line_segment2 )
-{   
+{
     // 线段 line_segment2 的起点和终点的y坐标.
     Vector2d boundary_bgn = line_segment2.head<2>();
     Vector2d boundary_end = line_segment2.tail<2>();
 
-    // 消失点与上边缘采样点构成线段的长度.
+    // 消失点与上边缘采样点构成线段的长度（x和y的长度）.
     Vector2d direc = pt_end - pt_start;
     Vector2d hit_pt(-1,-1);
     
     // line equation is (p_u,p_v)+lambda*(delta_u,delta_v)  parameterized by lambda
+
     // 如果是水平边缘，两个点的 y 坐标相等.
-    if ( boundary_bgn(1)==boundary_end(1) )   // if an horizontal edge
+    if ( boundary_bgn(1) == boundary_end(1) )   // if an horizontal edge
     {
-        double lambd=(boundary_bgn(1)-pt_start(1))/direc(1);
-        if (lambd>=0)  // along ray direction
+        // 
+        double lambd = (boundary_bgn(1)-pt_start(1))/direc(1);
+        if (lambd >= 0)  // along ray direction
         {
-            Vector2d hit_pt_tmp = pt_start+lambd*direc;
-            if ( (boundary_bgn(0)<=hit_pt_tmp(0)) && (hit_pt_tmp(0)<=boundary_end(0)) )  // inside the segments
+            // @PARAM   hit_pt_tmp
+            Vector2d hit_pt_tmp = pt_start + lambd * direc;
+            if ( (boundary_bgn(0) <= hit_pt_tmp(0)) && (hit_pt_tmp(0) <= boundary_end(0)) )  // inside the segments
             {
                 hit_pt = hit_pt_tmp;
-                hit_pt(1)= boundary_bgn(1);  // floor operations might have un-expected things
+                hit_pt(1) = boundary_bgn(1);  // floor operations might have un-expected things
             }
 	    }
-    }    
-    if ( boundary_bgn(0)==boundary_end(0) )   // if an vertical edge
+    }
+
+    // 如果是垂直边缘.
+    if ( boundary_bgn(0) == boundary_end(0) )   // if an vertical edge
     {
         double lambd=(boundary_bgn(0)-pt_start(0))/direc(0);
         if (lambd>=0)  // along ray direction
-	{
+        {
             Vector2d hit_pt_tmp = pt_start+lambd*direc;
             if ( (boundary_bgn(1)<=hit_pt_tmp(1)) && (hit_pt_tmp(1)<=boundary_end(1)) )  // inside the segments
-	    {
+            {
                 hit_pt = hit_pt_tmp;
                 hit_pt(0)= boundary_bgn(0);  // floor operations might have un-expected things
-	    }
-	}
+            }
+        }
     }
     return hit_pt;
 }
 
 // compute two line intersection points, a simplified version compared to matlab
-Vector2d lineSegmentIntersect(const Vector2d& pt1_start, const Vector2d& pt1_end, const Vector2d& pt2_start, const Vector2d& pt2_end, 
-			      bool infinite_line)
+// BRIEF    lineSegmentIntersect()    计算两条线的交点.
+Vector2d lineSegmentIntersect(  const Vector2d& pt1_start, const Vector2d& pt1_end,     /* 线段 1*/
+                                const Vector2d& pt2_start, const Vector2d& pt2_end,     /* 线段 2*/
+			                    bool infinite_line)
 {
     // treat as [x1 y1 x2 y2]    [x3 y3 x4 y4]
-      double X2_X1 = pt1_end(0)-pt1_start(0);
-      double Y2_Y1 = pt1_end(1)-pt1_start(1);
-      double X4_X3 = pt2_end(0)-pt2_start(0);
-      double Y4_Y3 = pt2_end(1)-pt2_start(1);
-      double X1_X3 = pt1_start(0)-pt2_start(0);
-      double Y1_Y3 = pt1_start(1)-pt2_start(1);
-      double u_a = (X4_X3*Y1_Y3-Y4_Y3*X1_X3)/ (Y4_Y3*X2_X1-X4_X3*Y2_Y1);
-      double u_b = (X2_X1*Y1_Y3-Y2_Y1*X1_X3)/ (Y4_Y3*X2_X1-X4_X3*Y2_Y1);      
-      double INT_X = pt1_start(0)+X2_X1*u_a;
-      double INT_Y = pt1_start(1)+Y2_Y1*u_a;
-      double INT_B = double((u_a >= 0) && (u_a <= 1) && (u_b >= 0) && (u_b <= 1));
-      if (infinite_line)
+    double X2_X1 = pt1_end(0)-pt1_start(0);
+    double Y2_Y1 = pt1_end(1)-pt1_start(1);
+
+    double X4_X3 = pt2_end(0)-pt2_start(0);
+    double Y4_Y3 = pt2_end(1)-pt2_start(1);
+
+    double X1_X3 = pt1_start(0)-pt2_start(0);
+    double Y1_Y3 = pt1_start(1)-pt2_start(1);
+
+    double u_a = (X4_X3*Y1_Y3 - Y4_Y3*X1_X3) / (Y4_Y3*X2_X1 - X4_X3*Y2_Y1);
+    double u_b = (X2_X1*Y1_Y3 - Y2_Y1*X1_X3) / (Y4_Y3*X2_X1 - X4_X3*Y2_Y1);      
+
+    double INT_X = pt1_start(0) + X2_X1*u_a;
+    double INT_Y = pt1_start(1) + Y2_Y1*u_a;
+    double INT_B = double((u_a >= 0) && (u_a <= 1) && (u_b >= 0) && (u_b <= 1));
+
+    if (infinite_line)
 	  INT_B=1;
-      
-      return Vector2d(INT_X*INT_B, INT_Y*INT_B);      
+    
+    return Vector2d(INT_X*INT_B, INT_Y*INT_B);      
 }
+
 Vector2f lineSegmentIntersect_f(const Vector2f& pt1_start, const Vector2f& pt1_end, const Vector2f& pt2_start, const Vector2f& pt2_end,
 			      float& extcond_1, float& extcond_2, bool infinite_line)
 {
