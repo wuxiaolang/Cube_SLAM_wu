@@ -101,9 +101,9 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat& rgb_img, const Matrix4d& tra
     bool reweight_edge_distance = true;  	// if want to compare with all configurations. we need to reweight
 
     // 提案评分的参数.
-    bool whether_normalize_two_errors = true; 	// 是否归一化误差？
+    bool whether_normalize_two_errors = true; 	// 是否归一化角度和距离误差
 	double weight_vp_angle = 0.8; 				// NOTE 角度对齐误差的权重，训练的经验值，论文中为 0.7.
-	double weight_skew_error = 1.5; 				// NOTE 形状误差的权重，训练的经验值，论文中为 1.5.
+	double weight_skew_error = 1.5; 			// NOTE 形状误差的权重，训练的经验值，论文中为 1.5.
     // TODO：if also consider config2, need to weight two erros, in order to compare two configurations
 
     // TODO：确保边缘线段的两个端点是从左到右存储的.
@@ -645,34 +645,50 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat& rgb_img, const Matrix4d& tra
 							all_configs_error_one_objH.conservativeResize(2*valid_config_number_one_objH,NoChange);
 							all_box_corners_2d_one_objH.conservativeResize(4*valid_config_number_one_objH,NoChange);
 						}
-		      		} //end of config loop
-		  		} //end of top id
-	      	} //end of yaw
+		      		} //end of config loop	两种情形.
+		  		} //end of top id	上边缘采样点.
+	      	} //end of yaw	采样的yaw角.
 	      
 			// std::cout << "valid_config_number_one_hseight  " << valid_config_number_one_objH << std::endl;
 			// std::cout << "all_configs_error_one_objH  \n" << all_configs_error_one_objH.topRows(valid_config_number_one_objH) << std::endl;
 			// MatrixXd all_corners = all_box_corners_2d_one_objH.topRows(2*valid_config_number_one_objH);
 			// std::cout<<"all corners   "<<all_corners<<std::endl;
 
-	      VectorXd normalized_score; vector<int> good_proposal_ids;
-	      fuse_normalize_scores_v2(all_configs_error_one_objH.col(4).head(valid_config_number_one_objH), all_configs_error_one_objH.col(5).head(valid_config_number_one_objH),
-				    normalized_score, good_proposal_ids, weight_vp_angle,whether_normalize_two_errors);	      
+			// STEP 计算距离-角度的综合得分：normalized_score，和有效的提案ID：good_proposal_ids.
+			VectorXd normalized_score; 
+			vector<int> good_proposal_ids;
+			fuse_normalize_scores_v2(	all_configs_error_one_objH.col(4).head(valid_config_number_one_objH), 	/* 距离误差 */
+										all_configs_error_one_objH.col(5).head(valid_config_number_one_objH),	/* 角度误差 */
+										normalized_score, 				/* 综合得分 */
+										good_proposal_ids, 				/* 最终纳入计算的测量的ID */
+										weight_vp_angle,				/* 角度误差的权重 */
+										whether_normalize_two_errors);	/* 是否归一化两个误差 */
 
-	      for (int box_id=0;box_id<good_proposal_ids.size();box_id++)
-	      {
-		  int raw_cube_ind = good_proposal_ids[box_id];
-		  
-		  if (whether_sample_cam_roll_pitch)
-		  {
-		      Matrix4d transToWolrd_new = transToWolrd;
-		      transToWolrd_new.topLeftCorner<3,3>() = euler_zyx_to_rot<double>(all_configs_error_one_objH(raw_cube_ind,7), all_configs_error_one_objH(raw_cube_ind,8), cam_pose_raw.euler_angle(2));
-		      set_cam_pose(transToWolrd_new);
-		      ground_plane_sensor = cam_pose.transToWolrd.transpose()*ground_plane_world;
-		  }
-		  
-		  cuboid* sample_obj = new cuboid();
-		  change_2d_corner_to_3d_object(all_box_corners_2d_one_objH.block(2*raw_cube_ind,0,2,8), all_configs_error_one_objH.row(raw_cube_ind).head<3>(), 
-						ground_plane_sensor,  cam_pose.transToWolrd, cam_pose.invK, cam_pose.projectionMatrix,*sample_obj);
+			// 遍历所有有效的提案.
+			for (int box_id = 0; box_id < good_proposal_ids.size(); box_id++)
+			{
+				int raw_cube_ind = good_proposal_ids[box_id];
+				// 对相机的 roll 和 pitch 角进行采样.
+				if (whether_sample_cam_roll_pitch)
+				{
+					Matrix4d transToWolrd_new = transToWolrd;
+					// 将当前旋转转换成角度值.
+					transToWolrd_new.topLeftCorner<3,3>() = euler_zyx_to_rot<double>(all_configs_error_one_objH(raw_cube_ind,7), 
+																					 all_configs_error_one_objH(raw_cube_ind,8), 
+																					 cam_pose_raw.euler_angle(2));
+					set_cam_pose(transToWolrd_new);
+					// TODO 平面？
+					ground_plane_sensor = cam_pose.transToWolrd.transpose()*ground_plane_world;
+				}
+
+				// 立方体对象sample_obj.
+		  		cuboid* sample_obj = new cuboid();
+		  		change_2d_corner_to_3d_object(	all_box_corners_2d_one_objH.block(2*raw_cube_ind,0,2,8), 
+				  								all_configs_error_one_objH.row(raw_cube_ind).head<3>(), 
+												ground_plane_sensor,  
+												cam_pose.transToWolrd, 
+												cam_pose.invK, 
+												cam_pose.projectionMatrix,*sample_obj);
 // 		  sample_obj->print_cuboid();
 		  if ((sample_obj->scale.array() < 0).any())     continue;                        // scale should be positive
 		  sample_obj->rect_detect_2d =  Vector4d(left_x_raw,top_y_raw,obj_width_raw,obj_height_raw);

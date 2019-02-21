@@ -323,9 +323,15 @@ bool read_obj_detection2_txt(const std::string txt_file_name, Eigen::MatrixXd& r
   
 }
 
-void sort_indexes(const Eigen::VectorXd &vec, std::vector<int>& idx, int top_k ) 
+// BRIEF 对序列的前 top_k 项进行递增排序.
+void sort_indexes(  const Eigen::VectorXd &vec, /* 需要排序的向量 */
+                    std::vector<int>& idx,      /* 排序索引 */
+                    int top_k )                 /* 排序前top_k */
 {
-    std::partial_sort(idx.begin(),idx.begin()+top_k, idx.end(), [&vec](int i1, int i2){return vec(i1) < vec(i2);} );
+    std::partial_sort(  idx.begin(),            /* 序列的起点 */
+                        idx.begin() + top_k,    /* 对序列的前top_k排序 */
+                        idx.end(),              /* 序列的终点 */
+                        [&vec](int i1, int i2){return vec(i1) < vec(i2);} );    /* 局部递增排序 */
 }
 
 void sort_indexes(const Eigen::VectorXd &vec, std::vector<int>& idx)

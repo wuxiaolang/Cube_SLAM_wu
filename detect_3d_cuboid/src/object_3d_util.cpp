@@ -610,68 +610,118 @@ double box_edge_alignment_angle_error(  const MatrixXd& all_vp_bound_edge_angles
     return total_angle_diff;
 }
 
-// weighted sum different score
-void fuse_normalize_scores_v2(const VectorXd& dist_error, const VectorXd& angle_error, VectorXd& combined_scores, std::vector<int>& final_keep_inds, 
-			      double weight_vp_angle, bool whether_normalize)
+// BRIEF 加权不同的误差评估 weighted sum different score
+void fuse_normalize_scores_v2(  const VectorXd& dist_error,         /* 距离误差 */           
+                                const VectorXd& angle_error,        /* 角度误差 */
+                                VectorXd& combined_scores,          /* 综合得分 */    
+                                std::vector<int>& final_keep_inds,  /* 最终纳入计算的测量的ID */
+			                    double weight_vp_angle,             /* 角度误差的权重 */
+                                bool whether_normalize)             /* 是否归一化两个误差 */
 {
+    // 原始测量的次数
     int raw_data_size = dist_error.rows();
-    if (raw_data_size>4)
-    {
-	int breaking_num = round(float(raw_data_size)/3.0*2.0);
-	std::vector<int> dist_sorted_inds(raw_data_size); std::iota(dist_sorted_inds.begin(), dist_sorted_inds.end(), 0);
-	std::vector<int> angle_sorted_inds = dist_sorted_inds;
-	
-	sort_indexes(dist_error, dist_sorted_inds, breaking_num);
-	sort_indexes(angle_error, angle_sorted_inds, breaking_num);
 
-	std::vector<int> dist_keep_inds = std::vector<int>(dist_sorted_inds.begin(),dist_sorted_inds.begin()+breaking_num-1);  // keep best 2/3
-	
-	if ( angle_error(angle_sorted_inds[breaking_num-1])>angle_error(angle_sorted_inds[breaking_num-2]) )
-	{
-	    std::vector<int> angle_keep_inds = std::vector<int>(angle_sorted_inds.begin(),angle_sorted_inds.begin()+breaking_num-1);  // keep best 2/3
-	    
-	    std::sort(dist_keep_inds.begin(),dist_keep_inds.end());
-	    std::sort(angle_keep_inds.begin(),angle_keep_inds.end());
-	    std::set_intersection(dist_keep_inds.begin(), dist_keep_inds.end(),
-				  angle_keep_inds.begin(), angle_keep_inds.end(),
-				  std::back_inserter(final_keep_inds));
-	}
-	else  //don't need to consider angle.   my angle error has maximum. may already saturate at breaking pt.
-	{
-	    final_keep_inds = dist_keep_inds;
-	}
+    if (raw_data_size > 4)
+    {
+        // @PARAM breaking_num  需要排序的数量：总数据量的 2/3.
+        int breaking_num = round(float(raw_data_size)/3.0*2.0);
+
+        // 从 0 开始生成一个有序向量：0,1，2 ... 4137 ...
+        std::vector<int> dist_sorted_inds(raw_data_size); 
+        std::iota(dist_sorted_inds.begin(), dist_sorted_inds.end(), 0);
+
+        std::vector<int> angle_sorted_inds = dist_sorted_inds;
+        
+        // NOTE 对距离误差 dist_error 的前 breaking_num（2/3的量）递增排序.
+        sort_indexes(   dist_error, 
+                        dist_sorted_inds,   /* 排序依据 */
+                        breaking_num);      /* 排序前breaking_num项 */     
+
+        // NOTE 对角度误差 angle_error 的前 breaking_num（2/3的量）递增排序.
+        sort_indexes(   angle_error, 
+                        angle_sorted_inds, 
+                        breaking_num);
+
+        // 保存前 2/3 的数据.
+        // @PARAM   dist_keep_inds  距离误差前2/3数据的ID（在dist_error中）
+        std::vector<int> dist_keep_inds = std::vector<int>( dist_sorted_inds.begin(),
+                                                            dist_sorted_inds.begin() + breaking_num-1);  // keep best 2/3
+
+        // for(int i = 0; i <= dist_keep_inds.size(); i++)
+        //     std::cout << "ID：\t" << dist_keep_inds[i] << "  " << "距离误差：\t" << dist_error(dist_keep_inds[i]) << std::endl;
+
+        // 如果angle_error中第 angle_sorted_inds[breaking_num-1] 误差大于 angle_sorted_inds[breaking_num-2]
+        if ( angle_error(angle_sorted_inds[breaking_num-1]) > angle_error(angle_sorted_inds[breaking_num-2]) )
+        {
+            // @PARAM    angle_keep_inds    角度误差前2/3数据的ID（在angle_error中）
+            std::vector<int> angle_keep_inds = std::vector<int>(    angle_sorted_inds.begin(),
+                                                                    angle_sorted_inds.begin() + breaking_num-1);  // keep best 2/3
+            
+            // 对距离和角度ID进行重新排序.
+            std::sort(dist_keep_inds.begin(),dist_keep_inds.end());
+            std::sort(angle_keep_inds.begin(),angle_keep_inds.end());
+
+            // NOTE 寻找两个序列的交集：final_keep_inds.
+            std::set_intersection(  dist_keep_inds.begin(), 
+                                    dist_keep_inds.end(),
+                                    angle_keep_inds.begin(), 
+                                    angle_keep_inds.end(),
+                                    std::back_inserter(final_keep_inds));
+        }
+        else  //don't need to consider angle.   my angle error has maximum. may already saturate at breaking pt.
+        {
+            final_keep_inds = dist_keep_inds;
+        }
     }
     else
     {
-	final_keep_inds.resize(raw_data_size);   //don't change anything.
-	std::iota(final_keep_inds.begin(), final_keep_inds.end(), 0);
-    }
-  
-    int new_data_size = final_keep_inds.size();
-    // find max/min of kept errors.
-    double min_dist_error=1e6; double max_dist_error=-1;double min_angle_error=1e6;double max_angle_error=-1;
-    VectorXd dist_kept(new_data_size);  VectorXd angle_kept(new_data_size);
-    for (int i=0;i<new_data_size;i++)
-    {
-	double temp_dist = dist_error(final_keep_inds[i]);	double temp_angle = angle_error(final_keep_inds[i]);
-	min_dist_error = std::min(min_dist_error,temp_dist);	max_dist_error = std::max(max_dist_error,temp_dist);
-	min_angle_error = std::min(min_angle_error,temp_angle); max_angle_error = std::max(max_angle_error,temp_angle);
-	dist_kept(i) = temp_dist;  angle_kept(i) = temp_angle;
+	    final_keep_inds.resize(raw_data_size);   //don't change anything.
+	    std::iota(final_keep_inds.begin(), final_keep_inds.end(), 0);
     }
     
-    if (whether_normalize && (new_data_size>1))
+    // 距离和角度误差都较小的 ID.
+    int new_data_size = final_keep_inds.size();
+
+    // find max/min of kept errors.
+    double min_dist_error = 1e6; 
+    double max_dist_error = -1;
+    double min_angle_error = 1e6;
+    double max_angle_error = -1;
+
+    VectorXd dist_kept(new_data_size);  
+    VectorXd angle_kept(new_data_size);
+
+    // STEP 找到距离和角度误差最大最小值.
+    for (int i = 0; i < new_data_size; i++)
     {
-	combined_scores  = (dist_kept.array()-min_dist_error)/(max_dist_error-min_dist_error);
-	if ((max_angle_error-min_angle_error)>0)
-	{
-	    angle_kept = (angle_kept.array()-min_angle_error)/(max_angle_error-min_angle_error);
-	    combined_scores = (combined_scores + weight_vp_angle*angle_kept)/(1+weight_vp_angle);
-	}
-	else
-	    combined_scores = (combined_scores + weight_vp_angle*angle_kept)/(1+weight_vp_angle);
+        double temp_dist = dist_error(final_keep_inds[i]);	
+        double temp_angle = angle_error(final_keep_inds[i]);
+        min_dist_error = std::min(min_dist_error,temp_dist);	
+        max_dist_error = std::max(max_dist_error,temp_dist);
+        min_angle_error = std::min(min_angle_error,temp_angle); 
+        max_angle_error = std::max(max_angle_error,temp_angle);
+        dist_kept(i) = temp_dist;  
+        angle_kept(i) = temp_angle;
+    }
+    
+    // STEP 误差归一化.
+    if (whether_normalize && (new_data_size > 1))
+    {
+        // 距离误差             （所有的距离 - 最小距离值）/ (最大距离-最小距离)
+        combined_scores  = (dist_kept.array() - min_dist_error) / (max_dist_error - min_dist_error);
+        if ((max_angle_error - min_angle_error) > 0)
+        {
+            // 角度误差        （所有角度误差 - 最小角度误差） / （最大角度误差 - 最小角度误差）
+            angle_kept = (angle_kept.array() - min_angle_error) / (max_angle_error - min_angle_error);
+
+            // NOTE 联合评分，（距离误差 + 角度权重×角度误差）/（1 + 角度权重）
+            combined_scores = (combined_scores + weight_vp_angle * angle_kept) / (1 + weight_vp_angle);
+        }
+        else
+            combined_scores = (combined_scores + weight_vp_angle*angle_kept)/(1+weight_vp_angle);
     }
     else
-	combined_scores = (dist_kept+weight_vp_angle*angle_kept)/(1+weight_vp_angle);    
+	    combined_scores = (dist_kept + weight_vp_angle * angle_kept) / (1 + weight_vp_angle);    
 }
 
 
