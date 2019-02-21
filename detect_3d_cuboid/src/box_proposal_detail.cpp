@@ -681,74 +681,128 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat& rgb_img, const Matrix4d& tra
 					ground_plane_sensor = cam_pose.transToWolrd.transpose()*ground_plane_world;
 				}
 
-				// 立方体对象sample_obj.
+				// NOTE 计算立方体对象sample_obj.
 		  		cuboid* sample_obj = new cuboid();
-		  		change_2d_corner_to_3d_object(	all_box_corners_2d_one_objH.block(2*raw_cube_ind,0,2,8), 
-				  								all_configs_error_one_objH.row(raw_cube_ind).head<3>(), 
-												ground_plane_sensor,  
-												cam_pose.transToWolrd, 
-												cam_pose.invK, 
-												cam_pose.projectionMatrix,*sample_obj);
-// 		  sample_obj->print_cuboid();
-		  if ((sample_obj->scale.array() < 0).any())     continue;                        // scale should be positive
-		  sample_obj->rect_detect_2d =  Vector4d(left_x_raw,top_y_raw,obj_width_raw,obj_height_raw);
-		  sample_obj->edge_distance_error = all_configs_error_one_objH(raw_cube_ind,4); // record the original error
-		  sample_obj->edge_angle_error = all_configs_error_one_objH(raw_cube_ind,5);
-		  sample_obj->normalized_error = normalized_score(box_id);
-		  double skew_ratio = sample_obj->scale.head(2).maxCoeff()/sample_obj->scale.head(2).minCoeff();
-		  sample_obj->skew_ratio = skew_ratio;
-		  sample_obj->down_expand_height = all_configs_error_one_objH(raw_cube_ind,6);
-		  if (whether_sample_cam_roll_pitch)
-		  {
-		      sample_obj->camera_roll_delta = all_configs_error_one_objH(raw_cube_ind,7)-cam_pose_raw.euler_angle(0);
-		      sample_obj->camera_pitch_delta = all_configs_error_one_objH(raw_cube_ind,8)-cam_pose_raw.euler_angle(1);
-		  }
-		  else
-		  {   sample_obj->camera_roll_delta = 0;sample_obj->camera_pitch_delta = 0; }
-		  
-		  raw_obj_proposals.push_back(sample_obj);
-	      }
-	  } // end of differnet object height sampling
+		  		change_2d_corner_to_3d_object(	all_box_corners_2d_one_objH.block(2*raw_cube_ind,0,2,8), /* 8 个点的 2D 坐标*/
+				  								all_configs_error_one_objH.row(raw_cube_ind).head<3>(),	 /* 模式，vp1的位置，偏航角*/
+												ground_plane_sensor,  					/* 法平面？*/
+												cam_pose.transToWolrd, 					/* 相机旋转 */
+												cam_pose.invK, 							/* 相机内参的逆矩阵 */
+												cam_pose.projectionMatrix,				/* 投影矩阵 */
+												*sample_obj);							/* 3D提案 */
+				// 输出提案的具体信息.
+				// sample_obj->print_cuboid();
+				/*
+				printing cuboids info....
+				【pos】     -1.58339 0.373187 0.300602
+				【scale】   0.155737 0.436576 0.300602
+				【rotY】    -2.90009
+				【box_config_type】   1  1
+				【box_corners_2d】 
+				503 279 213 430 559 261 174 459
+				245 396 319 200  56 184 116  23
+				【box_corners_3d_world】 
+				-1.6302   -1.83902   -1.53659   -1.32776    -1.6302   -1.83902   -1.53659   -1.32776
+				-0.087966   0.759848    0.83434 -0.0134734  -0.087966   0.759848    0.83434 -0.0134734
+						0          0          0          0   0.601204   0.601204   0.601204   0.601204
+				*/
+				
+				// 保证尺度为正.
+				if ((sample_obj->scale.array() < 0).any())     
+					continue;                        // scale should be positive
+				
+				// STEP 存储对象的信息.
+				// 2D 检测框.
+				sample_obj->rect_detect_2d =  Vector4d(left_x_raw, top_y_raw, obj_width_raw, obj_height_raw);
+				// 边缘误差.
+				sample_obj->edge_distance_error = all_configs_error_one_objH(raw_cube_ind,4); // record the original error
+				// 角度误差.
+				sample_obj->edge_angle_error = all_configs_error_one_objH(raw_cube_ind,5);
+				// 归一化误差.
+				sample_obj->normalized_error = normalized_score(box_id);
+				// NOTE 歪斜比：长/宽.
+				// head(2).maxCoeff()：尺度的前两项xy中较大者：长
+				// head(2).minCoeff()：尺度的前两项xy中较小者：宽
+				double skew_ratio = sample_obj->scale.head(2).maxCoeff()/sample_obj->scale.head(2).minCoeff();
+				sample_obj->skew_ratio = skew_ratio;
+				// 是否对高度进行了采样？ 0,10,20.
+				sample_obj->down_expand_height = all_configs_error_one_objH(raw_cube_ind,6);
 
-	  // %finally rank all proposals. [normalized_error   skew_error]
-	  int actual_cuboid_num_small = std::min(max_cuboid_num,(int)raw_obj_proposals.size());
-	  VectorXd all_combined_score(raw_obj_proposals.size());
-	  for (int box_id=0;box_id<raw_obj_proposals.size();box_id++)
-	  {
-	      cuboid* sample_obj = raw_obj_proposals[box_id];
-	      double skew_error = weight_skew_error*std::max(sample_obj->skew_ratio-nominal_skew_ratio,0.0);
-	      if (sample_obj->skew_ratio > max_cut_skew)
-		    skew_error = 100;
-	      double new_combined_error = sample_obj->normalized_error+weight_skew_error*skew_error;
-	      all_combined_score(box_id) = new_combined_error;
-	  }
+				// 如果对相机的 roll 和 pitch 角进行采样.用采样得到的角-相机的原始角度.（否则直接使用相机的角度，角度差为0）
+				// 保存 roll 和 pitch 角的【角度差】.
+				if (whether_sample_cam_roll_pitch)
+				{
+					sample_obj->camera_roll_delta = all_configs_error_one_objH(raw_cube_ind,7) - cam_pose_raw.euler_angle(0);
+					sample_obj->camera_pitch_delta = all_configs_error_one_objH(raw_cube_ind,8) - cam_pose_raw.euler_angle(1);
+				}
+				else
+				{   
+					sample_obj->camera_roll_delta = 0;
+					sample_obj->camera_pitch_delta = 0; }
+					raw_obj_proposals.push_back(sample_obj);
+				}
+	  		} // end of differnet object height sampling
+
+			// STEP 最后对所有提案进行排名（归一化误差+歪斜比）
+			// %finally rank all proposals. [normalized_error   skew_error]
+			// 准确提案的数量 1 ？0？
+			int actual_cuboid_num_small = std::min(max_cuboid_num, (int)raw_obj_proposals.size());
+
+			VectorXd all_combined_score(raw_obj_proposals.size());
+
+			// 计算总体误差
+			for (int box_id = 0; box_id < raw_obj_proposals.size(); box_id++)
+			{
+				cuboid* sample_obj = raw_obj_proposals[box_id];
+				// 计算歪斜比误差 skew_ratio - 1，要求大于0
+				double skew_error = weight_skew_error*std::max(sample_obj->skew_ratio - nominal_skew_ratio,0.0);
+				
+				// TODO 若大于最大歪斜比 3 ，则误差为100
+				if (sample_obj->skew_ratio > max_cut_skew)
+					skew_error = 100;
+
+				// NOTE 新的误差：距离+角度+歪斜比误差
+				double new_combined_error = sample_obj->normalized_error + weight_skew_error*skew_error;	// TODO 这里还乘了一个权重？前面也乘了.
+				all_combined_score(box_id) = new_combined_error;
+			}
 	  
-	  std::vector<int> sort_idx_small(all_combined_score.rows());   iota(sort_idx_small.begin(), sort_idx_small.end(), 0);
-	  sort_indexes(all_combined_score, sort_idx_small,actual_cuboid_num_small);
-	  for (int ii=0;ii<actual_cuboid_num_small;ii++) // use sorted index
-	  {
-	      all_object_cuboids[object_id].push_back(raw_obj_proposals[sort_idx_small[ii]]);
-	  }
-	  
-	  ca::Profiler::tictoc("One 3D object total time"); 
-      }// end of different objects
+	  		// STEP 保留误差最小的提案.
+	  		// 提案的索引（ID）并从 0 开始递增赋值.
+			std::vector<int> sort_idx_small(all_combined_score.rows());   
+			iota(sort_idx_small.begin(), sort_idx_small.end(), 0);
 
+			// 对 all_combined_score 的前 actual_cuboid_num_small（1） 项进行递增.
+			sort_indexes(	all_combined_score, 		/* 检索比较的序列 */
+							sort_idx_small,				/* 按照all_combined_score中误差从小到达排序误差对应的ID */
+							actual_cuboid_num_small);
 
-      if (whether_plot_final_images || whether_save_final_images)
-      {
-	  cv::Mat frame_all_cubes_img = rgb_img.clone();
-	  for (int object_id=0;object_id< all_object_cuboids.size();object_id++)
-	    if ( all_object_cuboids[object_id].size()>0 )
-	    {
-		plot_image_with_cuboid(frame_all_cubes_img, all_object_cuboids[object_id][0]);
-	    }
-	  if (whether_save_final_images)
-	      cuboids_2d_img = frame_all_cubes_img;
-	  if (whether_plot_final_images)
-	  {
-	      cv::imshow("frame_all_cubes_img", frame_all_cubes_img);	 cv::waitKey(0);
-	  }
-      }
+			for (int ii = 0; ii < actual_cuboid_num_small; ii++) // use sorted index
+			{
+				all_object_cuboids[object_id].push_back(raw_obj_proposals[sort_idx_small[ii]]);
+				//std::cout << "sort_idx_small[ii]：" << sort_idx_small[ii] << std::endl;
+			}
+			ca::Profiler::tictoc("One 3D object total time"); 
+		}// end of different objects
+		
+		// STEP 绘制最终图案，保存结果.
+		if (whether_plot_final_images || whether_save_final_images)
+		{
+			cv::Mat frame_all_cubes_img = rgb_img.clone();
+			for (int object_id = 0; object_id < all_object_cuboids.size(); object_id++)
+			{	if ( all_object_cuboids[object_id].size()>0 )
+				{	
+					// NOTE 绘制提案.
+					plot_image_with_cuboid(frame_all_cubes_img, all_object_cuboids[object_id][0]);
+				}
+			}
+			if (whether_save_final_images)
+				cuboids_2d_img = frame_all_cubes_img;
+			if (whether_plot_final_images)
+			{
+				cv::imshow("frame_all_cubes_img", frame_all_cubes_img);	 
+				cv::waitKey(0);
+			}
+		}
 }
 
 

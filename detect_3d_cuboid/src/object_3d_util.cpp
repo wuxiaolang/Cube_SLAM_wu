@@ -13,21 +13,39 @@
 using namespace Eigen;
 using namespace std;
 
+// BRIEF 相似变换.
 Matrix4d similarityTransformation(const cuboid& cube_obj)
 {
+    // 旋转.
     Matrix3d rot;
-    rot<<cos(cube_obj.rotY),-sin(cube_obj.rotY),0,
-	 sin(cube_obj.rotY),cos(cube_obj.rotY),0,
-	 0, 0, 1;
+    rot <<  cos(cube_obj.rotY), -sin(cube_obj.rotY),     0, 
+            sin(cube_obj.rotY),  cos(cube_obj.rotY),     0,
+	                         0,                   0,     1;
+
+    /* 将物体的尺寸设置为一个对角矩阵
+        a   0   0
+        0   b   0
+        0   0   c  */
     Matrix3d scale_mat = cube_obj.scale.asDiagonal();
-    
-    Matrix4d res=Matrix4d::Identity();
-    res.topLeftCorner<3,3>() = rot*scale_mat;
+
+    // @PARAM 4*4的单位矩阵
+    Matrix4d res = Matrix4d::Identity();
+    res.topLeftCorner<3,3>() = rot * scale_mat;
+    // 最后一列是物体的位置.
     res.col(3).head(3) = cube_obj.pos;
+
+    // std::cout << "相似变换：\n" << res << std::endl;
+    /*
+    -0.151217    0.104412          0   -1.58339
+    -0.0372463  -0.423907          0   0.373187
+            0          0    0.300602   0.300602
+            0          0           0          1
+    */
+
     return res;
 }
 
-    
+// BRIEF 输出立方体提案的信息.
 void cuboid::print_cuboid()
 {
     std::cout<<"printing cuboids info...."<<std::endl;
@@ -39,14 +57,20 @@ void cuboid::print_cuboid()
     std::cout<<"box_corners_3d_world \n"<<box_corners_3d_world<<std::endl;
 }
 
-
+// BRIEF  计算立方体的 3D 坐标.
 Matrix3Xd compute3D_BoxCorner(const cuboid& cube_obj)
 {
-    MatrixXd corners_body;corners_body.resize(3,8);
-    corners_body<< 1, 1, -1, -1, 1, 1, -1, -1,
-		    1, -1, -1, 1, 1, -1, -1, 1,
-		  -1, -1, -1, -1, 1, 1, 1, 1;
-    MatrixXd corners_world = homo_to_real_coord<double>(similarityTransformation(cube_obj)*real_to_homo_coord<double>(corners_body));
+    //@PARAM    corners_body    存储立方体的3D坐标.
+    MatrixXd corners_body;
+    corners_body.resize(3,8);
+    // 八个3D点       1   2   3   4   5   6   7   8
+    corners_body <<  1,  1, -1, -1,  1,  1, -1, -1,
+		             1, -1, -1,  1,  1, -1, -1,  1,
+		            -1, -1, -1, -1,  1,  1,  1,  1;
+
+    // 计算 3D 坐标                                         相似变换
+    MatrixXd corners_world = homo_to_real_coord<double>(similarityTransformation(cube_obj) * real_to_homo_coord<double>(corners_body));
+    
     return corners_world;
 }
 
@@ -121,9 +145,11 @@ void plot_image_with_cuboid_edges(cv::Mat& plot_img, const MatrixXi& box_corners
     }
 }
 
+// BRIEF 将立方体提案绘制在原图上.
 void plot_image_with_cuboid(cv::Mat& plot_img, const cuboid* cube_obj)
 {
-    MatrixXi edge_markers;  get_cuboid_draw_edge_markers(edge_markers, cube_obj->box_config_type, true);
+    MatrixXi edge_markers;  
+    get_cuboid_draw_edge_markers(edge_markers, cube_obj->box_config_type, true);
     plot_image_with_cuboid_edges(plot_img, cube_obj->box_corners_2d, edge_markers);
 }
 
@@ -724,36 +750,55 @@ void fuse_normalize_scores_v2(  const VectorXd& dist_error,         /* 距离误
 	    combined_scores = (dist_kept + weight_vp_angle * angle_kept) / (1 + weight_vp_angle);    
 }
 
-
+// BRIEF 射线为 3×n ，每列都是从原点开始的一条射线  平面（4*1），计算射线的交点 3×n.
 //rays is 3*n, each column is a ray staring from origin  plane is (4，1） parameters, compute intersection  output is 3*n 
-void ray_plane_interact(const MatrixXd &rays,const Eigen::Vector4d &plane,MatrixXd &intersections)
-{  
-    VectorXd frac=-plane[3]/(plane.head(3).transpose()*rays).array();   //n*1 
-    intersections= frac.transpose().replicate<3,1>().array() * rays.array();
+void ray_plane_interact(const MatrixXd &rays,           
+                        const Eigen::Vector4d &plane,
+                        MatrixXd &intersections)
+{
+    VectorXd frac = -plane[3] / (plane.head(3).transpose() * rays).array();   //n*1 
+    intersections = frac.transpose().replicate<3,1>().array() * rays.array();
 }
 
-void plane_hits_3d(const Matrix4d& transToWolrd, const Matrix3d& invK, const Vector4d& plane_sensor,MatrixXd pixels, Matrix3Xd& pts_3d_world)
+// BRIEF 在 3D空间中计算与平面交线.
 // compute ray intersection with plane in 3D.
 // transToworld: 4*4 camera pose.   invK: inverse of calibration.   plane: 1*4  plane equation in sensor frame. 
 // pixels  2*n; each column is a pt [x;y] x is horizontal,y is vertical   outputs: pts3d 3*n in world frame
+void plane_hits_3d( const Matrix4d& transToWolrd,   /* 4*4 的相机位姿*/
+                    const Matrix3d& invK,           /* 相机内参的逆矩阵 */
+                    const Vector4d& plane_sensor,   /* 传感器坐标系中的 1*4 平面 */
+                    MatrixXd pixels,                /* 像素 2×n ，每列表示一个点（x,y）*/
+                    Matrix3Xd& pts_3d_world)        /* 输出：世界坐标系中的 3D 坐标点 */
 {
+    // 将之前的一列两行表示的点的坐标变成一列三行的形式.
     pixels.conservativeResize(3,NoChange);
-    pixels.row(2)=VectorXd::Ones(pixels.cols());
-    MatrixXd pts_ray=invK*pixels;    //each column is a 3D world coordinate  3*n    	
-    MatrixXd pts_3d_sensor;  ray_plane_interact(pts_ray,plane_sensor,pts_3d_sensor);
+
+    // pixels.cols() 列的数量
+    // 将 pixels 的第三行设置为 pixels.cols() 个 1.
+    pixels.row(2) = VectorXd::Ones(pixels.cols());
+
+    MatrixXd pts_ray = invK * pixels;    //each column is a 3D world coordinate  3*n    	
+    MatrixXd pts_3d_sensor;  
+    ray_plane_interact(pts_ray, plane_sensor, pts_3d_sensor);
+
     pts_3d_world = homo_to_real_coord<double>(transToWolrd*real_to_homo_coord<double>(pts_3d_sensor)); //
 }
 
+// BRIEF 计算 wall_plane 的方程.
 Vector4d get_wall_plane_equation(const Vector3d& gnd_seg_pt1, const Vector3d& gnd_seg_pt2)
 // 1*6 a line segment in 3D. [x1 y1 z1  x2 y2 z2]  z1=z2=0  or  two 1*3
 {
-
-    Vector3d partwall_normal_world = (gnd_seg_pt1-gnd_seg_pt2).cross(Vector3d(0,0,1)); // [0,0,1] is world ground plane
+    // 线段与[0,0,1]的叉积？
+    Vector3d partwall_normal_world = (gnd_seg_pt1 - gnd_seg_pt2).cross(Vector3d(0,0,1)); // [0,0,1] is world ground plane
+    
     partwall_normal_world.array() /= partwall_normal_world.norm();
-    double dist=-partwall_normal_world.transpose()*gnd_seg_pt1;
-    Vector4d plane_equation;plane_equation<<partwall_normal_world,
-					    dist;        // wall plane in world frame
-    if (dist<0)
+
+    double dist = -partwall_normal_world.transpose()*gnd_seg_pt1;
+    
+    Vector4d plane_equation;
+    plane_equation << partwall_normal_world, dist;        // wall plane in world frame
+    
+    if (dist < 0)
         plane_equation = -plane_equation;   // make all the normal pointing inside the room. neamly, pointing to the camera
     return plane_equation;
 }
@@ -772,38 +817,76 @@ void getVanishingPoints(const Matrix3d& KinvR,  /* Kalib*invR */
 
 
 // box_corners_2d_float is 2*8    change to my object struct from 2D box corners.
-void change_2d_corner_to_3d_object(const MatrixXd& box_corners_2d_float,const Vector3d& configs, const Vector4d& ground_plane_sensor, 
-				   const Matrix4d& transToWolrd, const Matrix3d& invK, Eigen::Matrix<double, 3, 4>& projectionMatrix,
-				   cuboid& sample_obj)
+// BRIEF    由2D顶点恢复出 3D 立方体信息.
+void change_2d_corner_to_3d_object( const MatrixXd& box_corners_2d_float,   /* 8 个点的 2D 坐标*/
+                                    const Vector3d& configs,                /* 模式，vp1的位置，偏航角*/
+                                    const Vector4d& ground_plane_sensor,    /* 法平面？*/
+				                    const Matrix4d& transToWolrd,           /* 相机旋转 */
+                                    const Matrix3d& invK,                   /* 相机内参的逆矩阵 */
+                                    Eigen::Matrix<double, 3, 4>& projectionMatrix,  /* 投影矩阵 */
+				                    cuboid& sample_obj)                     /* 3D提案 */
 {
-    Matrix3Xd obj_gnd_pt_world_3d; plane_hits_3d(transToWolrd, invK, ground_plane_sensor, box_corners_2d_float.rightCols(4), obj_gnd_pt_world_3d);//% 3*n each column is a 3D point  floating point
+    // @PARAM obj_gnd_pt_world_3d   计算世界坐标系中的 3D 点（立方体底部） .
+    Matrix3Xd obj_gnd_pt_world_3d; 
+    plane_hits_3d(  transToWolrd, 
+                    invK, 
+                    ground_plane_sensor, 
+                    box_corners_2d_float.rightCols(4), /* 立方体底部的 4 个点 */
+                    obj_gnd_pt_world_3d);//% 3*n each column is a 3D point  floating point
     
+    // STEP 通过点 5-8 计算长度的一半
     double length_half = (obj_gnd_pt_world_3d.col(0)-obj_gnd_pt_world_3d.col(3)).norm()/2;  // along object x direction   corner 5-8
+    // STEP 通过点 5-6 计算宽度的一半
     double width_half = (obj_gnd_pt_world_3d.col(0)-obj_gnd_pt_world_3d.col(1)).norm()/2;  // along object y direction   corner 5-6
     
+    // 通过第 5,6 点计算世界坐标系和相机坐标系中的 wall_plane
     Vector4d partwall_plane_world = get_wall_plane_equation(obj_gnd_pt_world_3d.col(0),obj_gnd_pt_world_3d.col(1));//% to compute height, need to unproject-hit-planes formed by 5-6 corner
     Vector4d partwall_plane_sensor = transToWolrd.transpose()*partwall_plane_world;  // wall plane in sensor frame
     
-    Matrix3Xd obj_top_pt_world_3d; plane_hits_3d(transToWolrd,invK,partwall_plane_sensor,box_corners_2d_float.col(1),obj_top_pt_world_3d);  // should match obj_gnd_pt_world_3d  % compute corner 2
-    double height_half = obj_top_pt_world_3d(2,0)/2;
+    // @PARAM obj_top_pt_world_3d   计算世界坐标系中的 3D 点（立方体顶部） .
+    Matrix3Xd obj_top_pt_world_3d; 
+    plane_hits_3d(  transToWolrd,
+                    invK,
+                    partwall_plane_sensor,
+                    box_corners_2d_float.col(1),
+                    obj_top_pt_world_3d);  // should match obj_gnd_pt_world_3d  % compute corner 2
     
-    double mean_obj_x = obj_gnd_pt_world_3d.row(0).mean(); double mean_obj_y = obj_gnd_pt_world_3d.row(1).mean();
+    // STEP 计算高度的一半，obj_top_pt_world_3d(2, 0)是立方体顶部第一个点的z坐标.
+    double height_half = obj_top_pt_world_3d(2, 0)/2;
     
-    double vp_1_position = configs(1); double yaw_esti = configs(2);  
-    sample_obj.pos = Vector3d(mean_obj_x,mean_obj_y,height_half);  sample_obj.rotY = yaw_esti;
+    // 顶部四个点的x和y坐标平均值.
+    double mean_obj_x = obj_gnd_pt_world_3d.row(0).mean(); 
+    double mean_obj_y = obj_gnd_pt_world_3d.row(1).mean();
+    
+    double vp_1_position = configs(1);  // 消失点 1 的位置.
+    double yaw_esti = configs(2);       // 采样的偏航角.
+
+    // STEP 物体的9自由度表示.
+    // 物体的位置：x,y（平均值），z（高度的一半）
+    sample_obj.pos = Vector3d(mean_obj_x, mean_obj_y, height_half);  
+    // 方向.
+    sample_obj.rotY = yaw_esti;
+    // 尺度.
     sample_obj.scale = Vector3d(length_half,width_half,height_half);
+    // 模式.
     sample_obj.box_config_type = configs.head<2>();
+
+    // @PARAM   cuboid_to_raw_boxstructIds   八个点的编号. 
     VectorXd cuboid_to_raw_boxstructIds(8);
     if (vp_1_position==1)  // vp1 on left, for all configurations
         cuboid_to_raw_boxstructIds<<6, 5, 8, 7, 2, 3, 4, 1;
     if (vp_1_position==2)  // vp1 on right, for all configurations
         cuboid_to_raw_boxstructIds<<5, 6, 7, 8, 3, 2, 1, 4;
 
+    // 将float类型的 2D坐标转换成 int 类型.
     Matrix2Xi box_corners_2d_int = box_corners_2d_float.cast<int>();
     sample_obj.box_corners_2d.resize(2,8);
-    for (int i=0;i<8;i++)
-	sample_obj.box_corners_2d.col(i)=box_corners_2d_int.col( cuboid_to_raw_boxstructIds(i)-1 ); // minius one to match index
+
+    // 将8个点的 2D 坐标按照编号存储在对象中.
+    for (int i = 0; i < 8; i++)
+	    sample_obj.box_corners_2d.col(i) = box_corners_2d_int.col( cuboid_to_raw_boxstructIds(i)-1 ); // minius one to match index
     
+    // NOTE 计算物体 8 个点的 3D 坐标.
     sample_obj.box_corners_3d_world = compute3D_BoxCorner(sample_obj);
 }
 
