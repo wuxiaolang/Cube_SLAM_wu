@@ -62,13 +62,16 @@ void detect_3d_cuboid::set_cam_pose(const Matrix4d& transToWolrd)
 		提取的边缘矩阵信息 all_lines_raw
    输出：立方体提案 all_object_cuboids
 */
-void detect_3d_cuboid::detect_cuboid(const cv::Mat& rgb_img, const Matrix4d& transToWolrd, const MatrixXd& obj_bbox_coors,
-				     				 MatrixXd all_lines_raw, std::vector<ObjectSet>& all_object_cuboids)
+void detect_3d_cuboid::detect_cuboid(	const cv::Mat& rgb_img,
+										const Matrix4d& transToWolrd, 
+										const MatrixXd& obj_bbox_coors,
+				     				 	MatrixXd all_lines_raw, 
+										std::vector<ObjectSet>& all_object_cuboids)
 {
-	// TODO:
+	// 绘制上边缘采样点
 	typedef cv::Point_<int> Point2i;
-	std::vector<Point2i> simple_points;		// 上边缘采样点.
-	cv::Mat image_point = rgb_img;
+	std::vector<Point2i> simple_points;	
+	cv::Mat image_point = rgb_img;	
 
 	// 读取相机位姿，将 Matrix4d 表示的相机位姿转换成自定义的 cam_pose_infos 位姿结构体格式.
     set_cam_pose(transToWolrd);
@@ -85,28 +88,28 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat& rgb_img, const Matrix4d& tra
     int img_width = rgb_img.cols;  
 	int img_height = rgb_img.rows;
 
-	// 读取检测框的行数，也即图像帧数.
+	// 读取检测框信息的行数，也即图像帧数.
     int num_2d_objs = obj_bbox_coors.rows();
     all_object_cuboids.resize(num_2d_objs);
 
-	// @PARAM all_configs	每帧视图的模式：1.观察到三个面；2.观察到两个面；3.观察到一个面.
+	// @PARAM all_configs	每帧视图的模式：1.观察到三个面；2.观察到两个面.
     vector<bool> all_configs;
 	all_configs.push_back(consider_config_1);
 	all_configs.push_back(consider_config_2);
 
-    // TODO：立方体提案生成的一些参数.
+    // 误差计算的一些阈值.
     double vp12_edge_angle_thre = 15; 		// 消失点 1 2 与边的夹角阈值.
 	double vp3_edge_angle_thre = 10;  		// 消失点 3 与边的夹角阈值.
     double shorted_edge_thre = 20;  		// 边的阈值.if box edge are too short. box might be too thin. most possibly wrong.
     bool reweight_edge_distance = true;  	// if want to compare with all configurations. we need to reweight
 
-    // 提案评分的参数.
+    // 归一化误差的权重.
     bool whether_normalize_two_errors = true; 	// 是否归一化角度和距离误差
 	double weight_vp_angle = 0.8; 				// NOTE 角度对齐误差的权重，训练的经验值，论文中为 0.7.
 	double weight_skew_error = 1.5; 			// NOTE 形状误差的权重，训练的经验值，论文中为 1.5.
-    // TODO：if also consider config2, need to weight two erros, in order to compare two configurations
+    // NOTE ：if also consider config2, need to weight two erros, in order to compare two configurations
 
-    // TODO：确保边缘线段的两个端点是从左到右存储的.
+    // STEP 【1.确保边缘线段的两个端点是从左到右存储的】
     align_left_right_edges(all_lines_raw); // this should be guaranteed when detecting edges
 	// 显示边缘检测的图.
     if(whether_plot_detail_images)
@@ -114,7 +117,10 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat& rgb_img, const Matrix4d& tra
 		cv::Mat output_img;  
 		// NOTE plot_image_with_edges() 函数绘制线段.
 		plot_image_with_edges(rgb_img, output_img, all_lines_raw, cv::Scalar(255,0,0));
+		cvNamedWindow("Raw detected Edges");
+		cvMoveWindow("Raw detected Edges", 20, 300);
 		cv::imshow("Raw detected Edges", output_img);	 //cv::waitKey(0);
+		cv::waitKey(0);
     }
     
     // NOTE find ground-wall boundary edges

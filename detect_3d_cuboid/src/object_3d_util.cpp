@@ -225,8 +225,14 @@ void plot_image_with_cuboid(cv::Mat& plot_img, const cuboid* cube_obj)
 void plot_image_with_edges(const cv::Mat& rgb_img, cv::Mat& output_img, MatrixXd& all_lines, const cv::Scalar& color)
 {
     output_img = rgb_img.clone();
-    for (int i=0;i<all_lines.rows();i++)
-	cv::line(output_img,cv::Point(all_lines(i,0),all_lines(i,1)),cv::Point(all_lines(i,2),all_lines(i,3)), cv::Scalar(255,0,0), 2, 8, 0);
+    for (int i = 0; i < all_lines.rows(); i++)
+        cv::line(   output_img,
+                    cv::Point(all_lines(i,0),all_lines(i,1)),
+                    cv::Point(all_lines(i,2),all_lines(i,3)), 
+                    cv::Scalar(255,0,0), 
+                    2, 
+                    8, 
+                    0);
 }
 
 // BRIEF check_inside_box() 函数判断点 pt 是否在 box_left_top 和 box_right_bottom 组成的边框内.
@@ -236,9 +242,10 @@ bool check_inside_box(const Vector2d& pt, const Vector2d& box_left_top, const Ve
 }
 
 // make sure edges start from left to right
-// BRIEF align_left_right_edges()函数 确保存储的边缘两个顶点是从左到右.
+// BRIEF align_left_right_edges()函数 确保存储的边缘两个端点是从左到右.
 void align_left_right_edges(MatrixXd& all_lines)
 {
+    cout << "边缘信息前：\n" << all_lines << std::endl;
     for (int line_id=0; line_id < all_lines.rows(); line_id++)
     {
         // 0 1， 2 3 要求第2个点的x坐标（2）要大于第一个点的 x 坐标（0）.
@@ -249,6 +256,7 @@ void align_left_right_edges(MatrixXd& all_lines)
             all_lines.row(line_id).head<2>() = temp;
         }
     }
+    cout << "边缘信息后：\n" << all_lines << std::endl;
 }
 
 
