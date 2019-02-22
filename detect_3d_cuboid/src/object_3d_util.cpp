@@ -8,8 +8,6 @@
 #include <opencv2/highgui/highgui.hpp>
 #include "opencv2/imgproc/imgproc.hpp"
 
-
-
 using namespace Eigen;
 using namespace std;
 
@@ -74,74 +72,143 @@ Matrix3Xd compute3D_BoxCorner(const cuboid& cube_obj)
     return corners_world;
 }
 
+// BRIEF 输出n*2的边缘
 // Output: n*2  each row is a edge's start and end pt id. 
 // box_config_type  [configuration_id, vp_1_on_left_or_right]      cuboid struct has this field.
-void get_object_edge_visibility( MatrixXi& visible_hidden_edge_pts,const Vector2d& box_config_type, bool final_universal_object)
-{
+void get_object_edge_visibility( MatrixXi& visible_hidden_edge_pts,
+                                 const Vector2d& box_config_type, 
+                                 bool final_universal_object)
+{   // 12 条边.
     visible_hidden_edge_pts.resize(12,2);
-    if (final_universal_object){  // final saved cuboid struct
-	if (box_config_type(0)==1){        // look at get_cuboid_face_ids to know the faces and pt id using my old box format
-	    if (box_config_type(1)==1)
-		visible_hidden_edge_pts<<3,4, 4,1, 4,8,    1,2, 2,3, 2,6, 1,5, 3,7, 5,6, 6,7, 7,8, 8,5;
-	    else
-		visible_hidden_edge_pts<<2,3, 3,4, 3,7,    1,2, 1,4, 2,6, 1,5, 4,8, 5,6, 6,7, 7,8, 8,5;
-	}
-	else
-	    visible_hidden_edge_pts<<2,3, 3,4, 4,1, 3,7, 4,8,    1,2, 2,6, 1,5, 5,6, 6,7, 7,8, 8,5;      
+
+    if (final_universal_object) // final saved cuboid struct
+    {  
+        // 观察模式（3个面）
+        if (box_config_type(0) == 1)  // look at get_cuboid_face_ids to know the faces and pt id using my old box format
+        {
+            // 如果vp1在左边.
+            if (box_config_type(1)==1)
+                //                          y    x    z    |  y    x    z  |           x  | y    x    y
+                visible_hidden_edge_pts << 3,4, 4,1, 4,8,    1,2, 2,3, 2,6, 1,5, 3,7, 5,6, 6,7, 7,8, 8,5;   // TODO 1,5 3,7 ——> 3,5 1,7
+            else
+                visible_hidden_edge_pts << 2,3, 3,4, 3,7,    1,2, 1,4, 2,6, 1,5, 4,8, 5,6, 6,7, 7,8, 8,5;
+	    }
+        else
+            visible_hidden_edge_pts << 2,3, 3,4, 4,1, 3,7, 4,8,    1,2, 2,6, 1,5, 5,6, 6,7, 7,8, 8,5;      
     }
-    else{  // 2D box corners index only used in cuboids genetation process
-	if (box_config_type(0)==1)
-	    visible_hidden_edge_pts<<7,8, 7,6, 7,1,    1,2, 2,3, 3,4, 4,1, 2,6, 3,5, 4,8, 5,8, 5,6; // hidden + visible
-	else
-	    visible_hidden_edge_pts<<7,8, 7,6, 7,1, 8,4, 8,5,    1,2, 2,3, 3,4, 4,1, 2,6, 3,5, 5,6;
+    else// 2D box corners index only used in cuboids genetation process
+    {  
+        if (box_config_type(0)==1)
+            visible_hidden_edge_pts<<7,8, 7,6, 7,1,    1,2, 2,3, 3,4, 4,1, 2,6, 3,5, 4,8, 5,8, 5,6; // hidden + visible
+        else
+            visible_hidden_edge_pts<<7,8, 7,6, 7,1, 8,4, 8,5,    1,2, 2,3, 3,4, 4,1, 2,6, 3,5, 5,6;
     }
+    // std::cout << "visible_hidden_edge_pts：\n" << visible_hidden_edge_pts << std::endl;
 }
 
-
+// BRIEF  生成边缘信息.
+// 输出：边缘边界 edge_markers ，每行：边缘起点，终点，类型.
 // output: edge_markers  each row [ edge_start_pt_id, edge_end_pt_id,  edge_marker_type_id in line_marker_type ]
 // box_config_type  [configuration_id, vp_1_on_left_or_right]      cuboid struct has this field.
-void get_cuboid_draw_edge_markers(MatrixXi& edge_markers, const Vector2d& box_config_type, bool final_universal_object)
+void get_cuboid_draw_edge_markers(  MatrixXi& edge_markers,             /* 输出的边缘标记（xyz和是否可见） */
+                                    const Vector2d& box_config_type,    /* 模式1 2，vp1的位置 */
+                                    bool final_universal_object)        /* 是否是最终保存的提案 */
 {
+    // @PARAM  visible_hidden_edge_pts  线的两个端点
     MatrixXi visible_hidden_edge_pts;
-    get_object_edge_visibility(visible_hidden_edge_pts,box_config_type, final_universal_object);
+    get_object_edge_visibility(visible_hidden_edge_pts, box_config_type, final_universal_object);
+
+    // @PARAM  edge_line_markers  边的信息：颜色，是否可见.
     VectorXi edge_line_markers(12);
+
+    // 最终确定的提案.
     if (final_universal_object)  // final saved cuboid struct  
     {
-	if (box_config_type(0)==1){
-	    if (box_config_type(1)==1)
-		edge_line_markers<<4,2,6,3,1,5,5,5,3,1,3,1;		
-	    else
-		edge_line_markers<<2,4,6,3,1,5,5,5,3,1,3,1;
-	}
-	else
-	    edge_line_markers<<2,4,2,6,6,3,5,5,3,1,3,1;
+        // 情形 1 ，vp1在左边.
+        if (box_config_type(0)==1)
+        {
+            if (box_config_type(1)==1)
+                edge_line_markers << 4,2,6,3,1,5,5,5,3,1,3,1;		
+            else
+                edge_line_markers << 2,4,6,3,1,5,5,5,3,1,3,1;
+        }
+        else
+            edge_line_markers << 2,4,2,6,6,3,5,5,3,1,3,1;
+        //cout << "edge_line_markers:\n" << edge_line_markers << std::endl;
     }
+    // 生成过程中的临时提案.
     else  // 2D box corners index only used in cuboids genetation process
     {
-	if (box_config_type(0)==1)
-	    edge_line_markers<<4,2,6,1,3,1,3,5,5,5,1,3;   // each row: edge_start_id,edge_end_id,edge_marker_type_id
-	else
-	    edge_line_markers<<4,2,6,6,2,1,3,1,3,5,5,3;
+        if (box_config_type(0)==1)
+            edge_line_markers<<4,2,6,1,3,1,3,5,5,5,1,3;   // each row: edge_start_id,edge_end_id,edge_marker_type_id
+        else
+            edge_line_markers<<4,2,6,6,2,1,3,1,3,5,5,3;
     }
     
     edge_markers.resize(12,3);
-    edge_markers<<visible_hidden_edge_pts,edge_line_markers;
-    edge_markers.array() -=1;  // to match c++ index
+    edge_markers << visible_hidden_edge_pts, edge_line_markers;
+    // cout << "edge_markers:\n" << edge_markers << std::endl;
+    edge_markers.array() -=1;  // to match c++ index，每个元素-1
+    /*
+    3 4 4
+    4 1 2
+    4 8 6
+    1 2 3
+    2 3 1
+    2 6 5
+    1 5 5       // 3 5
+    3 7 5       // 1 7
+    5 6 3
+    6 7 1
+    7 8 3
+    8 5 1
+    */
 }
 
+// BRIEF 12条边绘制.
 // each line is x1 y1 x2 y2   color: Scalar(255,0,0) eg
-void plot_image_with_cuboid_edges(cv::Mat& plot_img, const MatrixXi& box_corners_2d, const MatrixXi& edge_markers)
+void plot_image_with_cuboid_edges(  cv::Mat& plot_img, 
+                                    const MatrixXi& box_corners_2d,     /* 2D 坐标 */
+                                    const MatrixXi& edge_markers)       /* 边：第一列x,第二列y,第三列 类型（xyz轴是否可见）1-6*/
 {
-    MatrixXi line_markers(6,4); // each row is  BGR, line_thickness
-    line_markers<<0,0,255,2, 0,0,255,1, 0,255,0,2, 0,255,0,1, 255,0,0,2, 255,0,0,1;
-    
-    for (int edge_id=0;edge_id<edge_markers.rows();edge_id++)
-    {      
-      VectorXi edge_conds=edge_markers.row(edge_id);
-      cv::line(plot_img,cv::Point(box_corners_2d(0, edge_conds(0)),box_corners_2d(1, edge_conds(0))),
-			  cv::Point(box_corners_2d(0, edge_conds(1)),box_corners_2d(1, edge_conds(1))), 
-			  cv::Scalar(line_markers(edge_conds(2),0),line_markers(edge_conds(2),1),line_markers(edge_conds(2),2)),
-			  line_markers(edge_conds(2),3), CV_AA, 0);
+    // @PARAM   line_markers    存储矩形边的颜色和类型
+    MatrixXi line_markers(6,4); // each row is  BGR, line_thickness线段粗细
+    line_markers << 0,0,255,3,      // 1：红色，y轴，可见
+                    0,0,255,0.3,    // 2：红色，y轴，不可见     粗细为 0.3（在背面看不到）
+                    0,255,0,3,      // 3：绿色，x轴(长)，可见
+                    0,255,0,0.3,    // 4：绿色，x轴(长)，不可见
+                    255,0,0,3,      // 5：蓝色，z轴，可见
+                    255,0,0,0.3;    // 6：蓝色，z轴，不可见
+
+    // 绘制每一条边.
+    for (int edge_id = 0; edge_id < edge_markers.rows(); edge_id++)
+    {
+        VectorXi edge_conds = edge_markers.row(edge_id);
+        cv::line(   plot_img, 
+                    cv::Point(box_corners_2d(0, edge_conds(0)), box_corners_2d(1, edge_conds(0))),  /* 第 edge_conds(0) 个点的xy坐标 */
+                    cv::Point(box_corners_2d(0, edge_conds(1)), box_corners_2d(1, edge_conds(1))),  /* 第 edge_conds(1) 个点的xy坐标 */
+                    // 颜色
+                    cv::Scalar(line_markers(edge_conds(2),0), line_markers(edge_conds(2),1), line_markers(edge_conds(2),2)),
+                    // 粗细（是否可见）
+                    line_markers(edge_conds(2),3), 
+                    CV_AA, //CV_AA, 
+                    0);
+        
+        // 标注点
+        cv::putText(plot_img, 
+                    to_string(edge_conds(0) + 1), 
+                    cv::Point(box_corners_2d(0, edge_conds(0)), box_corners_2d(1, edge_conds(0))),
+                    2,      // fontFace
+                    0.8,    // fontScale
+                    cv::Scalar(255, 0, 0), 
+                    1);     // 粗细
+        cv::putText(plot_img, 
+                    to_string(edge_conds(1) + 1), 
+                    cv::Point(box_corners_2d(0, edge_conds(1)), box_corners_2d(1, edge_conds(1))),
+                    2,      // fontFace
+                    0.8,    // fontScale
+                    cv::Scalar(255, 0, 0), 
+                    1);     // 粗细
     }
 }
 
@@ -874,9 +941,9 @@ void change_2d_corner_to_3d_object( const MatrixXd& box_corners_2d_float,   /* 8
     // @PARAM   cuboid_to_raw_boxstructIds   八个点的编号. 
     VectorXd cuboid_to_raw_boxstructIds(8);
     if (vp_1_position==1)  // vp1 on left, for all configurations
-        cuboid_to_raw_boxstructIds<<6, 5, 8, 7, 2, 3, 4, 1;
+        cuboid_to_raw_boxstructIds << 6, 5, 8, 7, 2, 3, 4, 1;
     if (vp_1_position==2)  // vp1 on right, for all configurations
-        cuboid_to_raw_boxstructIds<<5, 6, 7, 8, 3, 2, 1, 4;
+        cuboid_to_raw_boxstructIds << 5, 6, 7, 8, 3, 2, 1, 4;
 
     // 将float类型的 2D坐标转换成 int 类型.
     Matrix2Xi box_corners_2d_int = box_corners_2d_float.cast<int>();

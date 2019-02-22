@@ -343,7 +343,8 @@ void detect_3d_cuboid::detect_cuboid(const cv::Mat& rgb_img, const Matrix4d& tra
 				// std::cout << "vp_1:\n" << vp_1 << std::endl;
 				// std::cout << "vp_2:\n" << vp_2 << std::endl;
 				// std::cout << "vp_3:\n" << vp_3 << std::endl;
-
+				// circle(image_point, cv::Point(vp_1(0)/5, vp_1(1))/5, 3, cv::Scalar(255,0,0),-1,8,0);
+				
 				// @PARAM all_vps(3,2) 存储三个消失点.
 				MatrixXd all_vps(3,2);
 				all_vps.row(0) = vp_1;
