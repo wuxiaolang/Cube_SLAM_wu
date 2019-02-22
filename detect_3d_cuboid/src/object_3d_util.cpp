@@ -195,20 +195,20 @@ void plot_image_with_cuboid_edges(  cv::Mat& plot_img,
                     0);
         
         // 标注点
-        cv::putText(plot_img, 
-                    to_string(edge_conds(0) + 1), 
-                    cv::Point(box_corners_2d(0, edge_conds(0)), box_corners_2d(1, edge_conds(0))),
-                    2,      // fontFace
-                    0.8,    // fontScale
-                    cv::Scalar(255, 0, 0), 
-                    1);     // 粗细
-        cv::putText(plot_img, 
-                    to_string(edge_conds(1) + 1), 
-                    cv::Point(box_corners_2d(0, edge_conds(1)), box_corners_2d(1, edge_conds(1))),
-                    2,      // fontFace
-                    0.8,    // fontScale
-                    cv::Scalar(255, 0, 0), 
-                    1);     // 粗细
+        // cv::putText(plot_img, 
+        //             to_string(edge_conds(0) + 1), 
+        //             cv::Point(box_corners_2d(0, edge_conds(0)), box_corners_2d(1, edge_conds(0))),
+        //             2,      // fontFace
+        //             0.8,    // fontScale
+        //             cv::Scalar(255, 0, 0), 
+        //             1);     // 粗细
+        // cv::putText(plot_img, 
+        //             to_string(edge_conds(1) + 1), 
+        //             cv::Point(box_corners_2d(0, edge_conds(1)), box_corners_2d(1, edge_conds(1))),
+        //             2,      // fontFace
+        //             0.8,    // fontScale
+        //             cv::Scalar(255, 0, 0), 
+        //             1);     // 粗细
     }
 }
 
@@ -245,7 +245,6 @@ bool check_inside_box(const Vector2d& pt, const Vector2d& box_left_top, const Ve
 // BRIEF align_left_right_edges()函数 确保存储的边缘两个端点是从左到右.
 void align_left_right_edges(MatrixXd& all_lines)
 {
-    cout << "边缘信息前：\n" << all_lines << std::endl;
     for (int line_id=0; line_id < all_lines.rows(); line_id++)
     {
         // 0 1， 2 3 要求第2个点的x坐标（2）要大于第一个点的 x 坐标（0）.
@@ -256,7 +255,6 @@ void align_left_right_edges(MatrixXd& all_lines)
             all_lines.row(line_id).head<2>() = temp;
         }
     }
-    cout << "边缘信息后：\n" << all_lines << std::endl;
 }
 
 

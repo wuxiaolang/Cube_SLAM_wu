@@ -110,7 +110,7 @@ public:
       bool consider_config_1 = true;                  // false true
       bool consider_config_2 = true;                  // TODO 
       bool whether_sample_cam_roll_pitch = true;      // sample camera roll pitch in case don't have good camera pose TODO
-      bool whether_sample_bbox_height = false;        // sample object height as raw detection might not be accurate TODO
+      bool whether_sample_bbox_height = true;        // sample object height as raw detection might not be accurate TODO
 
       int max_cuboid_num = 1;  	                  // 最终返回的立方体的个数.
       double nominal_skew_ratio = 1;                  // normally this 1, unless there is priors TODO 为什么是1？？

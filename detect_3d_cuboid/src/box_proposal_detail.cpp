@@ -123,11 +123,11 @@ void detect_3d_cuboid::detect_cuboid(	const cv::Mat& rgb_img,
 		cv::waitKey(0);
     }
     
-    // NOTE find ground-wall boundary edges
+	// STEP 【2.世界坐标系下的平面和相机坐标系下平面】
+    // TODO find ground-wall boundary edges
 	// 作为列向量处理，在 pop up 中，使用的是 [0 0 -1 0]，在这里，希望法线指向内部，朝向相机以匹配表面法线预测
     Vector4d ground_plane_world(0,0,1,0);  // treated as column vector % in my pop-up code, I use [0 0 -1 0]. here I want the normal pointing innerwards, towards the camera to match surface normal prediction
-	Vector4d ground_plane_sensor = cam_pose.transToWolrd.transpose()*ground_plane_world;
-	// TODO：ground_plane_world 和 ground_plane_sensor.
+	Vector4d ground_plane_sensor = cam_pose.transToWolrd.transpose() * ground_plane_world;
 
 	// 逐帧处理.
 	//int object_id=1;
@@ -137,6 +137,7 @@ void detect_3d_cuboid::detect_cuboid(	const cv::Mat& rgb_img,
 		// 计时？
 		ca::Profiler::tictoc("One 3D object total time"); 
 
+		// STEP 【3.2D 检测框大小，坐标和扩张】
 		// 读取YOLO边界框的左上角点的坐标 x y 和长宽.
 		int left_x_raw = obj_bbox_coors(object_id,0); 
 		int top_y_raw = obj_bbox_coors(object_id,1); 
@@ -166,20 +167,24 @@ void detect_3d_cuboid::detect_cuboid(	const cv::Mat& rgb_img,
 			// 如果扩大边界，则提供更多样本.
 			if (down_expand_sample_ranges > 10)  // if expand large margin, give more samples.
 				down_expand_sample_all.push_back(round(down_expand_sample_ranges/2));	// 10.
-				down_expand_sample_all.push_back(down_expand_sample_ranges);			// 20.
+			down_expand_sample_all.push_back(down_expand_sample_ranges);			// 20.
 		}
 		// for(int i=0; i<down_expand_sample_all.size(); i++)
         //     std::cout << down_expand_sample_all[i] << " " ;
 		// down_expand_sample_all: 0 10 20
-	  
+
+		// STEP 【4.对偏航角进行采样】
 		// NOTE later if in video, could use previous object yaw..., also reduce search range
 		// @PARAM 【偏航角】初始化为面向相机，与相机光轴对齐.
 		double yaw_init = cam_pose.camera_yaw - 90.0 / 180.0 * M_PI;  // yaw init is directly facing the camera, align with camera optical axis	  
-
 		// NOTE 偏航角采样 -45 °到45°，每隔6°采样一个值，共15个.
 		std::vector<double> obj_yaw_samples; 
 		// BRIEF linespace()函数从 a 到 b 以步长 c 产生采样的 d.
 		linespace<double>(yaw_init - 45.0/180.0*M_PI, yaw_init + 45.0/180.0*M_PI, 6.0/180.0*M_PI, obj_yaw_samples);
+		// std::cout << "初始化偏航角：\n" << yaw_init << std::endl;
+		// for(int i = 0; i < obj_yaw_samples.size(); i++)
+		// 	std::cout << "采样偏航角：\n" << obj_yaw_samples[i] << std::endl;
+
 
 		MatrixXd all_configs_errors(400,9); 
 		MatrixXd all_box_corners_2ds(800,8); 	// initialize a large eigen matrix
@@ -189,7 +194,7 @@ void detect_3d_cuboid::detect_cuboid(	const cv::Mat& rgb_img,
 		ObjectSet raw_obj_proposals;
 		raw_obj_proposals.reserve(100);		// 序列长度为 100.
 
-		// 循环 1 次或 3 次.
+		// 循环 1 次或 3 次(采样高度).
 		// int sample_down_expan_id=1;
 		for (int sample_down_expan_id = 0; sample_down_expan_id < down_expand_sample_all.size(); sample_down_expan_id++)
 		{
@@ -197,9 +202,10 @@ void detect_3d_cuboid::detect_cuboid(	const cv::Mat& rgb_img,
 			// 高度检测框的高度.
 			int obj_height_expan = obj_height_raw + down_expand_sample;				
 			int down_y_expan = top_y_raw + obj_height_expan; 					
-			// 宽度没变，高度变高了，求取对角线的长度.		
-			double obj_diaglength_expan = sqrt(obj_width_raw*obj_width_raw+obj_height_expan*obj_height_expan);
+			// 宽度没变，高度变高了，求取对角线的长度. // TODO 为什么只拓宽了高度没有拓宽宽度呢？后面扩大检测框的大小高宽都变大了		
+			double obj_diaglength_expan = sqrt(obj_width_raw * obj_width_raw + obj_height_expan * obj_height_expan);
 			
+			// STEP 【5. 上边缘采样点】
 			// 【顶边上的采样点的x坐标】，如果边太大，则提供更多样本。为所有边缘提供至少10个样本。对于小物体，物体位姿会改变很多.
 			// NOTE 从边界框的最左边 left_x_raw+5 到最右边 right_x_raw-5 每隔 top_sample_resolution（20像素）的距离采样一个点top_x_samples[i].
 			int top_sample_resolution = round(min(20,obj_width_raw/10 )); //  25 pixels
@@ -212,7 +218,7 @@ void detect_3d_cuboid::detect_cuboid(	const cv::Mat& rgb_img,
 			// 	std::cout << top_x_samples[i] << " " ;
 			// std::cout << std::endl;
 
-			// 存储顶边采样的点：x坐标为采样的坐标， y坐标为最高点的y坐标.
+			// 存储顶边采样的点
 			MatrixXd sample_top_pts(2,top_x_samples.size());
 			for (int ii = 0; ii < top_x_samples.size(); ii++)
 			{
@@ -224,7 +230,8 @@ void detect_3d_cuboid::detect_cuboid(	const cv::Mat& rgb_img,
 				circle(image_point, simple_points[ii], 3, cv::Scalar(255,0,0),-1,8,0);
 			}
 	      
-			// expand some small margin for distance map  [10 20]
+		  	// STEP 【扩大边界范围】
+			// TODO expand some small margin for distance map  [10 20]
 			// @PARAM 拓宽检测框的边界.
 			int distmap_expand_wid = min(max(min(20, obj_width_raw-100),10), max(min(20, obj_height_expan-100),10));	// 20.
 			int left_x_expan_distmap = max(0,left_x_raw-distmap_expand_wid); 				// 检测框左边界 x 坐标往左扩大 20.
@@ -241,8 +248,18 @@ void detect_3d_cuboid::detect_cuboid(	const cv::Mat& rgb_img,
 			// std::cout << "width_expan_distmap：" << width_expan_distmap << std::endl;
 			Vector2d expan_distmap_lefttop = Vector2d(left_x_expan_distmap, top_y_expan_distmap);			// 左上角坐标.
 			Vector2d expan_distmap_rightbottom = Vector2d(right_x_expan_distmap, down_y_expan_distmap);		// 右下角坐标.
-	      
-		  	// 找出在扩大后的边界框内的线段.
+
+			if(sample_down_expan_id == 0)
+				// NOTE 绘制拓宽的边界.
+				rectangle(	rgb_img,
+							cv::Point(left_x_expan_distmap, top_y_expan_distmap),     
+							cv::Point(right_x_expan_distmap, down_y_expan_distmap),  
+							cv::Scalar(255,0,0), 
+							2,   
+							8);
+
+			// STEP 【6.线段处理】
+			// STEP 【6.1 找出在扩大后的边界框内的线段.】
 	      	// find edges inside the object bounding box
 			// @PARAM all_lines_inside_object：存储所有在扩大后的边界框内的线段.
 			MatrixXd all_lines_inside_object(all_lines_raw.rows(),all_lines_raw.cols()); // first allocate a large matrix, then only use the toprows to avoid copy, alloc
@@ -358,7 +375,7 @@ void detect_3d_cuboid::detect_cuboid(	const cv::Mat& rgb_img,
 				all_vps.row(2) = vp_3;
 
 				// 输出采样的偏航角.
-				std::cout<<"obj_yaw_esti  " << obj_yaw_esti << "  " << obj_yaw_id << std::endl;
+				// std::cout<<"obj_yaw_esti  " << obj_yaw_esti << "  " << obj_yaw_id << std::endl;
 
 				// NOTE 计算每个消失点所对应的两条边的角度.
 				MatrixXd all_vp_bound_edge_angles = VP_support_edge_infos(	all_vps, 				/* 消失点矩阵 3*2 */
