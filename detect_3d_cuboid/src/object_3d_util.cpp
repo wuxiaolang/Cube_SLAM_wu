@@ -229,9 +229,9 @@ void plot_image_with_edges(const cv::Mat& rgb_img, cv::Mat& output_img, MatrixXd
         cv::line(   output_img,
                     cv::Point(all_lines(i,0),all_lines(i,1)),
                     cv::Point(all_lines(i,2),all_lines(i,3)), 
-                    cv::Scalar(255,0,0), 
+                    color, 
                     2, 
-                    8, 
+                    16, 
                     0);
 }
 
@@ -270,7 +270,7 @@ void atan2_vector(const VectorXd& y_vec, const VectorXd& x_vec, VectorXd& all_an
 {
     all_angles.resize(y_vec.rows());
     for (int i=0;i<y_vec.rows();i++)
-	all_angles(i)=std::atan2(y_vec(i),x_vec(i));  // don't need normalize_to_pi, because my edges is from left to right, always [-90 90]
+	    all_angles(i)=std::atan2(y_vec(i),x_vec(i));  // don't need normalize_to_pi, because my edges is from left to right, always [-90 90]
 }
 
 // remove the jumping angles from -pi to pi.   to make the raw angles smoothly change.

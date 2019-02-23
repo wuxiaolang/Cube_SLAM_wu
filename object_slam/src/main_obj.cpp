@@ -495,7 +495,7 @@ void incremental_build_graph(Eigen::MatrixXd& offline_pred_frame_objects, Eigen:
     detect_cuboid_obj.whether_plot_final_images = false;	// 不绘制检测结果图.
     detect_cuboid_obj.print_details = false;  				// 不输出检测细节.
     detect_cuboid_obj.set_calibration(calib);				// 设置内参.
-    detect_cuboid_obj.whether_sample_bbox_height = true;	// TODO
+    detect_cuboid_obj.whether_sample_bbox_height = false;	// TODO
     detect_cuboid_obj.nominal_skew_ratio = 2;				// TODO
     detect_cuboid_obj.whether_save_final_images = true;		// 保存检测结果图.
 	// STEP 【1.3 定义线检测对象】

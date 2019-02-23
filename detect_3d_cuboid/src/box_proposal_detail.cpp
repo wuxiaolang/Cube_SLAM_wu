@@ -68,6 +68,7 @@ void detect_3d_cuboid::detect_cuboid(	const cv::Mat& rgb_img,
 				     				 	MatrixXd all_lines_raw, 
 										std::vector<ObjectSet>& all_object_cuboids)
 {
+	cv::Mat merge_lines_img = rgb_img.clone();
 	// 绘制上边缘采样点
 	typedef cv::Point_<int> Point2i;
 	std::vector<Point2i> simple_points;	
@@ -276,7 +277,7 @@ void detect_3d_cuboid::detect_cuboid(	const cv::Mat& rgb_img,
 						inside_obj_edge_num++;
 					}
 	      
-		  	// 在找到物体的边缘线之后合并边，并剔除短边，小区域的边缘合并应该更快.
+		  	// STEP 【6.2 在找到物体的边缘线之后合并边，并剔除短边，小区域的边缘合并应该更快.】
 			// merge edges and remove short lines, after finding object edges.  edge merge in small regions should be faster than all.
 			// @PARAM 线段合并与筛选参数.
 			double pre_merge_dist_thre = 20; 
@@ -288,6 +289,13 @@ void detect_3d_cuboid::detect_cuboid(	const cv::Mat& rgb_img,
 								pre_merge_dist_thre,		/*两条线段的距离（水平）阈值 20 像素*/
 							  	pre_merge_angle_thre, 		/*角度阈值 5°*/
 								edge_length_threshold);		/*长度阈值 30 像素*/
+			// 显示筛选之后的边缘线段.
+			// cv::Mat output_img;
+			// plot_image_with_edges(merge_lines_img, output_img, all_lines_merge_inobj, cv::Scalar(0,255,0));
+			// cvNamedWindow("merge_lines_img");
+			// cvMoveWindow("merge_lines_img",500, 300);
+			// cv::imshow("merge_lines_img", output_img);	 //cv::waitKey(0);
+			// cv::waitKey(0);
 
 			// 计算每条边缘线段的角度和中点.
 			// @PARAM lines_inobj_angles	线段角度.
