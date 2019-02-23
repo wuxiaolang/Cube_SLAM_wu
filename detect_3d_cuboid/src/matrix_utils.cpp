@@ -340,7 +340,7 @@ void sort_indexes(const Eigen::VectorXd &vec, std::vector<int>& idx)
 }
 
 
-// BRIEF    normalize_to_pi()   将角度转换成 -90 ~90.
+// BRIEF    normalize_to_pi()   将角度转换成 -90 ~90 范围内.
 template <class T>
 T normalize_to_pi(T angle)
 {

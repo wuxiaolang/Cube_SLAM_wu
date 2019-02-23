@@ -277,17 +277,27 @@ void atan2_vector(const VectorXd& y_vec, const VectorXd& x_vec, VectorXd& all_an
 // BRIEF 从 -pi 到 pi 的顺序移除 jumping angles，使原始角度平滑变化.
 void smooth_jump_angles(const VectorXd& raw_angles,VectorXd& new_angles)
 {
+    // 
     new_angles = raw_angles;
     if (raw_angles.rows()==0)
         return;
 
     double angle_base = raw_angles(0);  // choose a new base angle.   (assume that the all the angles lie in [-pi pi] around the base)
-    for (int i=0;i<raw_angles.rows();i++)
+    std::cout << "angle_base: " << angle_base << std::endl;
+
+    for (int i = 0; i < raw_angles.rows(); i++)
     {
-        if ( (raw_angles(i)-angle_base)<-M_PI )
-            new_angles(i) = raw_angles(i)+2*M_PI;
-        else if ( (raw_angles(i)-angle_base)>M_PI )
-            new_angles(i) = raw_angles(i)-2*M_PI;
+        std::cout << "角度：\n" << (raw_angles(i) * 180)/M_PI << std::endl;
+        if ( (raw_angles(i)-angle_base) < - M_PI )
+            new_angles(i) = raw_angles(i) + 2 * M_PI;
+        else if ( (raw_angles(i) - angle_base) > M_PI )
+            new_angles(i) = raw_angles(i) - 2 * M_PI;
+        // std::cout << raw_angles(i) << " - " << angle_base << " = " << raw_angles(i)-angle_base << std::endl;
+        // 满足条件的边数：3
+        // angle_base: 2.81415
+        // 2.81415 - 2.81415 = 0
+        // 2.5341 - 2.81415 = -0.280048
+        // 2.6773 - 2.81415 = -0.136855
     }
 }
 
@@ -295,8 +305,7 @@ void smooth_jump_angles(const VectorXd& raw_angles,VectorXd& new_angles)
 // compute the intersection of line_1 (from start to end) with line segments (not infinite line). if not found, return [-1 -1]
 // the second line segments are either horizontal or vertical.   a simplified version of lineSegmentIntersect
 
-// BRIEF    seg_hit_boundary    检查消失点-上边缘采样点的射线是否与边界框的左右边界有交集，没有交集则返回 [-1 -1].
-// 第二条线段是水平线还是垂直线，
+// BRIEF    seg_hit_boundary    检查消失点-上边缘采样点的射线是否与边界框的左右边界有交集，没有交集则返回 [-1 -1]. 需要判断线段是水平还是垂直线.
 Vector2d seg_hit_boundary(const Vector2d& pt_start, const Vector2d& pt_end, const Vector4d& line_segment2 )
 {
     // 线段 line_segment2 的起点和终点的y坐标.
@@ -535,7 +544,7 @@ void merge_break_lines( const MatrixXd& all_lines,          /*输入的所有在
 
 // VPs 3*2   edge_mid_pts: n*2   vp_support_angle_thres 1*2
 // output: 3*2  each row is a VP's two boundary supported edges' angle.  if not found, nan for that entry
-// BRIEF 3*2的矩阵，每行是每个消失点支持线的角度.
+// BRIEF 3*2的矩阵，搜索可能构造该消失点的线段（满足角度差）
 Eigen::MatrixXd VP_support_edge_infos(  Eigen::MatrixXd& VPs,                   /* 消失点矩阵 3*2 */
                                         Eigen::MatrixXd& edge_mid_pts,          /* 每条线段的中点 n×2 */
                                         Eigen::VectorXd& edge_angles,           /* 每条线段的偏角 n×1 */
@@ -549,9 +558,9 @@ Eigen::MatrixXd VP_support_edge_infos(  Eigen::MatrixXd& VPs,                   
         {
             // @PARAM   vp_angle_thre   夹角阈值.
             double vp_angle_thre;
-            if (vp_id!=2)   /* 消失点 1 2 的夹角阈值.*/
+            if (vp_id!=2)   /* 消失点 1 2 的夹角阈值 15.*/
                 vp_angle_thre = vp_support_angle_thres(0)/180.0*M_PI;
-            else            /* 消失点 3 的夹角阈值.*/
+            else            /* 消失点 3 的夹角阈值 10.*/
                 vp_angle_thre = vp_support_angle_thres(1)/180.0*M_PI;
         
             std::vector<int> vp_inlier_edge_id;                             // 在范围内的边的 id.
@@ -562,31 +571,34 @@ Eigen::MatrixXd VP_support_edge_infos(  Eigen::MatrixXd& VPs,                   
             {
                 // @PARAM   vp1_edge_midpt_angle_raw_i   消失点到边的中点的角度. 
                 double vp1_edge_midpt_angle_raw_i = atan2( edge_mid_pts(edge_id,1) - VPs(vp_id,1), edge_mid_pts(edge_id,0) - VPs(vp_id,0) );
-                
+                // std::cout << "vp1_edge_midpt_angle_raw_i:\n" << vp1_edge_midpt_angle_raw_i << std::endl;
+
                 // @PARAM   vp1_edge_midpt_angle_norm_i  标准化之后的角度（-90 ~90）.
                 double vp1_edge_midpt_angle_norm_i = normalize_to_pi<double>(vp1_edge_midpt_angle_raw_i);
-                
+
                 // @PARAM   angle_diff_i    消失点_中点的角度 与 线段的角度差.
                 double angle_diff_i = std::abs(edge_angles(edge_id) - vp1_edge_midpt_angle_norm_i);
                 angle_diff_i = std::min(angle_diff_i,M_PI-angle_diff_i);
                 
-                // NOTE 如果角度差小于阈值， 保存下与第 edge_id 条边中点的角度
+                // NOTE 如果角度差小于阈值， 保存下与第 edge_id 条边中点的角度，也就是这条边可能是形成该消失点的边.
                 if (angle_diff_i < vp_angle_thre)
                 {
                     vp_edge_midpt_angle_raw_inlier(vp_inlier_edge_id.size()) = vp1_edge_midpt_angle_raw_i;
                     vp_inlier_edge_id.push_back(edge_id);
                 }
             }
-            
+
             // 如果存在在角度阈值内的线段.
             if (vp_inlier_edge_id.size() > 0) // if found inlier edges
             {
                 // @PARAM   vp1_edge_midpt_angle_raw_inlier_shift   平滑处理之后的角度.
                 VectorXd vp1_edge_midpt_angle_raw_inlier_shift; 
-                // 角度平滑变化.
+                // TODO 角度平滑变化. 什么作用没太理解？？
                 smooth_jump_angles( vp_edge_midpt_angle_raw_inlier.head(vp_inlier_edge_id.size()),
                                     vp1_edge_midpt_angle_raw_inlier_shift);
+                std::cout << "满足条件的边的数量：" << vp1_edge_midpt_angle_raw_inlier_shift.size() << std::endl;
 
+                // NOTE 如果有多条边满足要求（可能检测到多条支撑线），比较得到角度最大和最小的，作为两条支撑线.
                 // 角度最大和最小的边的id
                 int vp1_low_edge_id;	
                 vp1_edge_midpt_angle_raw_inlier_shift.maxCoeff(&vp1_low_edge_id);
@@ -595,7 +607,7 @@ Eigen::MatrixXd VP_support_edge_infos(  Eigen::MatrixXd& VPs,                   
 
                 // TODO 第 2 3 个消失点时交换最大和最小值
                 if (vp_id > 0)
-                    std::swap(vp1_low_edge_id,vp1_top_edge_id);  // match matlab code
+                    std::swap(vp1_low_edge_id, vp1_top_edge_id);  // match matlab code
                 
                 // NOTE 输出：消失点两边的夹角.
                 all_vp_bound_edge_angles(vp_id,0) = edge_angles(vp_inlier_edge_id[vp1_low_edge_id]);   // it will be 0*1 matrix if not found inlier edges.
@@ -632,19 +644,20 @@ double box_edge_sum_dists(  const cv::Mat& dist_map,            /* 距离变换�
 
         for (double sample_ind = 0; sample_ind < 11; sample_ind++)
         {
-            // 在线段上采样两个点   sample_pt.
+            // 在线段上采样1个点   sample_pt.
             Vector2d sample_pt = sample_ind/10.0 * corner_tmp1 + (1-sample_ind/10.0) * corner_tmp2;
 
             // NOTE 计算距离.
             float dist1 = dist_map.at<float>(int(sample_pt(1)),int(sample_pt(0)));  //make sure dist_map is float type
             
             // 是否重新加权
+            // TODO 第5,6,7条边的测量更值得信赖？？
             if (reweight_edge_distance)
             {
-                if ((4<=edge_id) && (edge_id<=5))
-                    dist1=dist1*3.0/2.0;
-                if (6==edge_id)
-                    dist1=dist1*2.0;
+                if ((4<=edge_id) && (edge_id<=5))       // 对第 5,6 条边 × 1.5
+                    dist1 = dist1 * 3.0 / 2.0;
+                if (6==edge_id)                         // 对第 7 条边  × 2
+                    dist1 = dist1 * 2.0;
             }
 
             sum_dist = sum_dist + dist1;
@@ -806,7 +819,7 @@ void fuse_normalize_scores_v2(  const VectorXd& dist_error,         /* 距离误
     // STEP 误差归一化.
     if (whether_normalize && (new_data_size > 1))
     {
-        // 距离误差             （所有的距离 - 最小距离值）/ (最大距离-最小距离)
+        // 距离误差             （所有的距离 - 最小距离值）/ (最大距离 - 最小距离)
         combined_scores  = (dist_kept.array() - min_dist_error) / (max_dist_error - min_dist_error);
         if ((max_angle_error - min_angle_error) > 0)
         {
@@ -878,7 +891,7 @@ Vector4d get_wall_plane_equation(const Vector3d& gnd_seg_pt1, const Vector3d& gn
 
 // BRIEF    getVanishingPoints()    【消失点计算】.
 void getVanishingPoints(const Matrix3d& KinvR,  /* Kalib*invR */
-                        double yaw_esti,        /* 采样的偏航角 */
+                        double yaw_esti,        /* 采样的物体偏航角 */
                         Vector2d& vp_1,         /* 输出的消失点 */
                         Vector2d& vp_2, 
                         Vector2d& vp_3)
@@ -888,12 +901,11 @@ void getVanishingPoints(const Matrix3d& KinvR,  /* Kalib*invR */
     vp_3 = homo_to_real_coord_vec<double>( KinvR * Vector3d(0,0,1) );                               // for object z axis
 }
 
-
 // box_corners_2d_float is 2*8    change to my object struct from 2D box corners.
 // BRIEF    由2D顶点恢复出 3D 立方体信息.
 void change_2d_corner_to_3d_object( const MatrixXd& box_corners_2d_float,   /* 8 个点的 2D 坐标*/
                                     const Vector3d& configs,                /* 模式，vp1的位置，偏航角*/
-                                    const Vector4d& ground_plane_sensor,    /* 法平面？*/
+                                    const Vector4d& ground_plane_sensor,    /* 相机系下的地平面*/
 				                    const Matrix4d& transToWolrd,           /* 相机旋转 */
                                     const Matrix3d& invK,                   /* 相机内参的逆矩阵 */
                                     Eigen::Matrix<double, 3, 4>& projectionMatrix,  /* 投影矩阵 */
@@ -901,11 +913,11 @@ void change_2d_corner_to_3d_object( const MatrixXd& box_corners_2d_float,   /* 8
 {
     // @PARAM obj_gnd_pt_world_3d   计算世界坐标系中的 3D 点（立方体底部） .
     Matrix3Xd obj_gnd_pt_world_3d; 
-    plane_hits_3d(  transToWolrd, 
-                    invK, 
-                    ground_plane_sensor, 
-                    box_corners_2d_float.rightCols(4), /* 立方体底部的 4 个点 */
-                    obj_gnd_pt_world_3d);//% 3*n each column is a 3D point  floating point
+    plane_hits_3d(  transToWolrd,                      /* 相机旋转矩阵 */
+                    invK,                              /* 相机内参的逆矩阵 */
+                    ground_plane_sensor,               /* 相机系下的地平面*/
+                    box_corners_2d_float.rightCols(4), /* 立方体底部的 4 个 2D 点 */
+                    obj_gnd_pt_world_3d);              /* 立方体底部的 4 个 3D 点 *///% 3*n each column is a 3D point  floating point
     
     // STEP 通过点 5-8 计算长度的一半
     double length_half = (obj_gnd_pt_world_3d.col(0)-obj_gnd_pt_world_3d.col(3)).norm()/2;  // along object x direction   corner 5-8

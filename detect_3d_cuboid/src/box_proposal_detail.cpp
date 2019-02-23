@@ -178,7 +178,7 @@ void detect_3d_cuboid::detect_cuboid(	const cv::Mat& rgb_img,
 		// NOTE later if in video, could use previous object yaw..., also reduce search range
 		// @PARAM 【偏航角】初始化为面向相机，与相机光轴对齐.
 		double yaw_init = cam_pose.camera_yaw - 90.0 / 180.0 * M_PI;  // yaw init is directly facing the camera, align with camera optical axis	  
-		// NOTE 偏航角采样 -45 °到45°，每隔6°采样一个值，共15个.
+		// NOTE 偏航物体的角采样 -45 °到45°，每隔6°采样一个值，共15个.
 		std::vector<double> obj_yaw_samples; 
 		// BRIEF linespace()函数从 a 到 b 以步长 c 产生采样的 d.
 		linespace<double>(yaw_init - 45.0/180.0*M_PI, yaw_init + 45.0/180.0*M_PI, 6.0/180.0*M_PI, obj_yaw_samples);
@@ -297,6 +297,7 @@ void detect_3d_cuboid::detect_cuboid(	const cv::Mat& rgb_img,
 			// cv::imshow("merge_lines_img", output_img);	 //cv::waitKey(0);
 			// cv::waitKey(0);
 
+			// STEP 【7. 计算角度、中点，Canny 边缘检测，距离变换】
 			// 计算每条边缘线段的角度和中点.
 			// @PARAM lines_inobj_angles	线段角度.
 			// @PARAM edge_mid_pts			线段的中点.
@@ -328,11 +329,12 @@ void detect_3d_cuboid::detect_cuboid(	const cv::Mat& rgb_img,
 				cv::imshow("normalized distance map", dist_map_img);cv::waitKey();
 			}
 
-			// STEP 生成立方体
+			// STEP 【8.生成立方体】
 			MatrixXd all_configs_error_one_objH(200,9);   		// 误差. 
 			MatrixXd all_box_corners_2d_one_objH(400,8); 		// 2D坐标
-			int valid_config_number_one_objH = 0;				// 有效测两次熟
+			int valid_config_number_one_objH = 0;				// 有效测量次数
 
+			// STEP 【8.1 采样相机的 roll pitch 角】
 		  	// 采样相机 roll pitch 角，在相机偏角的+-6°每隔3°采样一个值 或者 直接使用相机的roll pitch角.
 	      	std::vector<double> cam_roll_samples; 
 			std::vector<double> cam_pitch_samples;
@@ -354,22 +356,27 @@ void detect_3d_cuboid::detect_cuboid(	const cv::Mat& rgb_img,
 			for (int cam_pitch_id = 0; cam_pitch_id < cam_pitch_samples.size(); cam_pitch_id++)
 			for (int obj_yaw_id = 0; obj_yaw_id < obj_yaw_samples.size(); obj_yaw_id++)
 			{
+				std::cout << "第 " << cam_roll_id << " 个相机 roll 采样角" << std::endl;
+				std::cout << "第 " << cam_pitch_id << " 个相机 pitch 采样角" << std::endl;
+				std::cout << "第 " << obj_yaw_id << " 个物体 yaw 采样角" << std::endl;
+				
 				if (whether_sample_cam_roll_pitch)
 				{
 					Matrix4d transToWolrd_new = transToWolrd;
-					// 将当前角度值转换成旋转矩阵. TODO 这里yaw为什么不用采样的值而用相机的值？？
+					// 将当前角度值转换成旋转矩阵. 
+					// NOTE 这里yaw为什么不用采样的值而用相机的值？：yaw 采样是真对物体的，并没有对相机的 yaw 值进行采样。
 					transToWolrd_new.topLeftCorner<3,3>() = euler_zyx_to_rot<double>(cam_roll_samples[cam_roll_id], cam_pitch_samples[cam_pitch_id], cam_pose_raw.euler_angle(2));
 					set_cam_pose(transToWolrd_new);
 					// TODO 平面？？
 					ground_plane_sensor = cam_pose.transToWolrd.transpose() * ground_plane_world;
 				}
 
-				// 采样的偏航角.
+				// 读取采样的物体偏航角.
 				double obj_yaw_esti = obj_yaw_samples[obj_yaw_id];
 
+				// STEP 【8.2 计算三个消失点】
 				// @PARAM	vp_1, vp_2, vp_3	三个消失点.
 				Vector2d vp_1, vp_2, vp_3;
-				// NOTE 获取消失点.
 				getVanishingPoints(cam_pose.KinvR, obj_yaw_esti, vp_1, vp_2, vp_3); // for object x y z  axis
 				// std::cout << "vp_1:\n" << vp_1 << std::endl;
 				// std::cout << "vp_2:\n" << vp_2 << std::endl;
@@ -385,25 +392,34 @@ void detect_3d_cuboid::detect_cuboid(	const cv::Mat& rgb_img,
 				// 输出采样的偏航角.
 				// std::cout<<"obj_yaw_esti  " << obj_yaw_esti << "  " << obj_yaw_id << std::endl;
 
-				// NOTE 计算每个消失点所对应的两条边的角度.
+				// STEP 【8.3 寻找形成消失点的两条边】
 				MatrixXd all_vp_bound_edge_angles = VP_support_edge_infos(	all_vps, 				/* 消失点矩阵 3*2 */
 																			edge_mid_pts,			/* 每条线段的中点 n×2 */
 																			lines_inobj_angles,		/* 每条线段的偏角 n×1 */
 																			Vector2d(vp12_edge_angle_thre, vp3_edge_angle_thre));	/* 消失点与各边的夹角阈值*/
 				// int sample_top_pt_id=15;
-				// STEP 遍历上边缘的采样点
+				// STEP 【8.4.遍历上边缘的采样点，得到 8 个点的 2D 坐标.】
 				for (int sample_top_pt_id = 0; sample_top_pt_id < sample_top_pts.cols(); sample_top_pt_id++)
 				{
+					std::cout << "第 " << sample_top_pt_id << " 个上边缘采样点" << std::endl;
 					// std::cout << "sample_top_pt_id " << sample_top_pt_id << std::endl;
-					// STEP 采样得到立方体上边缘的第一个点.
+					// STEP 【8.4.1 采样得到立方体上边缘的第一个点.】
 					// @PARAM corner_1_top 当前采样点.
 					Vector2d corner_1_top = sample_top_pts.col(sample_top_pt_id);
 					bool config_good = true;
 
+					// cv::putText(rgb_img, 
+					// 			"1", 
+					// 			cv::Point(corner_1_top(0), corner_1_top(1)),
+					// 			2,      // fontFace
+					// 			0.5,    // fontScale
+					// 			cv::Scalar(0, 255, 0), 
+					// 			1);     // 粗细
+
 					// @PARAM vp_1_position	消失点1的位置，1 是左边，2 是右边.
 					int vp_1_position = 0;  // 0 initial as fail,  1  on left   2 on right
 
-					// STEP 计算立方体上边缘的第二个点.
+					// STEP 【8.4.2 计算立方体上边缘的第二个点.】
 					// NOTE 检查【消失点1-上边缘采样点的射线是否与右边边界有交集】.
 					// @PARAM corner_2_top 消失点1-上边缘采样点射线与边界框左右边界的交点.
 					Vector2d corner_2_top = seg_hit_boundary(	vp_1,				/* 消失点 */
@@ -452,10 +468,11 @@ void detect_3d_cuboid::detect_cuboid(	const cv::Mat& rgb_img,
 						// NOTE 代码中的 3 4 与论文中相反，代码中的第三个点对应论文中第四个点.
 						Vector2d corner_3_top, corner_4_top;
 
+						// STEP 【8.4.3 第一种情形下的顶部第 3, 4 个点】
 						// NOTE 第一种情形，可以观察到物体的三个面.
 						if (config_id == 1)
 						{
-							// STEP 计算消失点 2 与左右边界的交点(第三个点).
+							// STEP 【计算消失点 2 与左右边界的交点(第三个点).】
 							// 如果消失点 1 在左边，则消失点vp2在右边，与左侧边界有交点 corner_4_top
 							if (vp_1_position == 1)   // then vp2 hit the left boundary
 								corner_4_top = seg_hit_boundary(vp_2, corner_1_top, Vector4d(left_x_raw, top_y_raw, left_x_raw, down_y_expan));
@@ -481,7 +498,7 @@ void detect_3d_cuboid::detect_cuboid(	const cv::Mat& rgb_img,
 							}
 
 							// compute the last point in the top face
-							// STEP 计算立方体上边缘第四个点（最后一个点）
+							// STEP 【计算立方体上边缘第四个点（最后一个点）】
 							corner_3_top = lineSegmentIntersect(vp_2, corner_2_top, vp_1, corner_4_top, true);
 							
 							// 检查.
@@ -503,6 +520,7 @@ void detect_3d_cuboid::detect_cuboid(	const cv::Mat& rgb_img,
 							//cout<<"corner_3/4   "<<corner_3_top.transpose()<<"   "<<corner_4_top.transpose()<<endl;
 						}
 
+						// STEP 【8.4.4 第二种情形下的顶部第 3, 4 个点】
 						// NOTE 第二种情形，可以观察到物体的两个面.
 						if (config_id==2)
 						{
@@ -552,7 +570,7 @@ void detect_3d_cuboid::detect_cuboid(	const cv::Mat& rgb_img,
 
 						// compute first bottom points    computing bottom points is the same for config 1,2
 						// NOTE 计算底部点（情形 1 和 2 的计算方法一样）
-						// STEP 计算第五个点	vp3—4线段与边界框下边界的交点
+						// STEP 【8.5 计算第五个点	vp3—4线段与边界框下边界的交点】
 						Vector2d corner_5_down = seg_hit_boundary(vp_3, corner_3_top, Vector4d(left_x_raw, down_y_expan, right_x_raw, down_y_expan));
 						// 检查.
 						if (corner_5_down(1)==-1){
@@ -565,7 +583,7 @@ void detect_3d_cuboid::detect_cuboid(	const cv::Mat& rgb_img,
 							continue;
 						}
 
-						// STEP 计算第 6 个点	vp2—5线段与vp3—2的交点.
+						// STEP 【8.6 计算第 6 个点	vp2—5线段与vp3—2的交点.】
 						Vector2d corner_6_down = lineSegmentIntersect(vp_2, corner_5_down, vp_3, corner_2_top, true);
 						if (!check_inside_box( corner_6_down, expan_distmap_lefttop, expan_distmap_rightbottom)){
 							config_good=false;  
@@ -577,7 +595,7 @@ void detect_3d_cuboid::detect_cuboid(	const cv::Mat& rgb_img,
 							continue;
 						}
 
-						// STEP 计算第 7 个点	vp1—6线段与vp3—1的交点.
+						// STEP 【8.7 计算第 7 个点	vp1—6线段与vp3—1的交点.】
 						Vector2d corner_7_down=lineSegmentIntersect(vp_1, corner_6_down, vp_3, corner_1_top, true);
 						if (!check_inside_box( corner_7_down, expan_distmap_lefttop, expan_distmap_rightbottom)){// might be slightly different from matlab
 							config_good=false;  
@@ -589,7 +607,7 @@ void detect_3d_cuboid::detect_cuboid(	const cv::Mat& rgb_img,
 							continue;
 						}
 
-						// STEP 计算第 8 个点	vp1—5线段与vp5—7的交点.
+						// STEP 【8.8 计算第 8 个点	vp1—5线段与vp5—7的交点.】
 						Vector2d corner_8_down=lineSegmentIntersect(vp_1,corner_5_down,vp_2, corner_7_down,true);
 						if (!check_inside_box( corner_8_down, expan_distmap_lefttop, expan_distmap_rightbottom)){
 							config_good=false;  
@@ -615,7 +633,7 @@ void detect_3d_cuboid::detect_cuboid(	const cv::Mat& rgb_img,
 						MatrixXi visible_edge_pt_ids, vps_box_edge_pt_ids;
 						double sum_dist;
 						
-						// STEP 计算距离变换图的距离，第一种情形.
+						// STEP 【9.1 距离误差计算】，第一种情形.
 						if (config_id == 1)
 						{
 							// 可以看到三个面，共9条边.
@@ -645,7 +663,7 @@ void detect_3d_cuboid::detect_cuboid(	const cv::Mat& rgb_img,
 							sum_dist = box_edge_sum_dists(dist_map, box_corners_2d_float_shift, visible_edge_pt_ids, reweight_edge_distance);
 						}
 						
-						// STEP 计算角度误差.
+						// STEP 【9.2 计算角度误差.】
 						double total_angle_diff = box_edge_alignment_angle_error(	all_vp_bound_edge_angles,	/* 消失点与边的两个角度 */
 																					vps_box_edge_pt_ids,		/* 每个消失点来源的两条边 */
 																					box_corners_2d_float);		/* 8 个顶点的 2D坐标 */
@@ -665,11 +683,11 @@ void detect_3d_cuboid::detect_cuboid(	const cv::Mat& rgb_img,
 						else
 							all_configs_error_one_objH.row(valid_config_number_one_objH).segment<2>(7) = Vector2d(	cam_pose_raw.euler_angle(0),
 																													cam_pose_raw.euler_angle(1));
-						
+
 						// TODO 所有情况下的物体的八个顶点的 2D坐标？
 						all_box_corners_2d_one_objH.block(2*valid_config_number_one_objH,0,2,8) = box_corners_2d_float;
 
-						// 有效的测量？？
+						// 有效的测量次数？？
 						valid_config_number_one_objH++;
 
 						if (valid_config_number_one_objH >= all_configs_error_one_objH.rows())
@@ -814,7 +832,7 @@ void detect_3d_cuboid::detect_cuboid(	const cv::Mat& rgb_img,
 				//std::cout << "sort_idx_small[ii]：" << sort_idx_small[ii] << std::endl;
 			}
 			ca::Profiler::tictoc("One 3D object total time"); 
-		}// end of different objects
+	}// end of different objects
 		
 		// STEP 绘制最终图案，保存结果.
 		if (whether_plot_final_images || whether_save_final_images)
