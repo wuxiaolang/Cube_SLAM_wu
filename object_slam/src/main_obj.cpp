@@ -222,7 +222,7 @@ void publish_all_poses(std::vector<tracking_frame*> all_frames,std::vector<objec
     ros::Publisher raw_cloud_pub = n.advertise<CloudXYZRGB> ("/raw_point_cloud", 50);
     
     int total_frame_number = all_frames.size();
-    
+ 
     // 估计的【相机位姿】.
     geometry_msgs::PoseArray all_pred_pose_array;    		// 估计位姿，存为数组，一次行发布所有.
 	std::vector<nav_msgs::Odometry> all_pred_pose_odoms;	// 估计位姿，存为向量，逐帧发布.
@@ -249,7 +249,7 @@ void publish_all_poses(std::vector<tracking_frame*> all_frames,std::vector<objec
 		// 分别保存为数组（一次性发布）和向量形式（逐帧发布）.
 		all_pred_pose_array.poses.push_back(posenode_to_geomsgs(all_frames[i]->cam_pose_Twc));
 		all_pred_pose_odoms.push_back(posenode_to_odommsgs(all_frames[i]->cam_pose_Twc,pose_header) );	
-
+		
 		/*NOTE 作者原始代码在这里将估计的相机位姿存放在 path_preds 中，并在后面一次性发布，我给他放到后面逐帧发布了.
 		// 位姿时间戳 postamp.
 		geometry_msgs::PoseStamped postamp;

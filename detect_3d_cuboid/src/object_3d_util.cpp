@@ -853,7 +853,7 @@ void ray_plane_interact(const MatrixXd &rays,
 void plane_hits_3d( const Matrix4d& transToWolrd,   /* 4*4 的相机位姿*/
                     const Matrix3d& invK,           /* 相机内参的逆矩阵 */
                     const Vector4d& plane_sensor,   /* 传感器坐标系中的 1*4 平面 */
-                    MatrixXd pixels,                /* 像素 2×n ，每列表示一个点（x,y）*/
+                    MatrixXd pixels,                /* 4个点的 2D坐标，像素 2×n ，每列表示一个点（x,y）*/
                     Matrix3Xd& pts_3d_world)        /* 输出：世界坐标系中的 3D 坐标点 */
 {
     // 将之前的一列两行表示的点的坐标变成一列三行的形式.
@@ -863,11 +863,46 @@ void plane_hits_3d( const Matrix4d& transToWolrd,   /* 4*4 的相机位姿*/
     // 将 pixels 的第三行设置为 pixels.cols() 个 1.
     pixels.row(2) = VectorXd::Ones(pixels.cols());
 
-    MatrixXd pts_ray = invK * pixels;    //each column is a 3D world coordinate  3*n    	
-    MatrixXd pts_3d_sensor;  
-    ray_plane_interact(pts_ray, plane_sensor, pts_3d_sensor);
+    MatrixXd pts_ray = invK * pixels;    // 得到像素点的投影线 each column is a 3D world coordinate  3*n    	
+    MatrixXd pts_3d_sensor;              // 相机系中 3D 点坐标.
+    ray_plane_interact(pts_ray, plane_sensor, pts_3d_sensor);   // 投影线与相机平面的交点即为 3D 点.
 
+    // 相机坐标系下的 3D 坐标转换到世界坐标系下.
+    // pts_3d_sensor：相机系中的 3D点 3*n
+    // real_to_homo_coord<double>(pts_3d_sensor)：转换成 4*n 的齐次坐标
+    // 再乘以 transToWolrd 转换成世界坐标系下  4*n 的齐次坐标
+    // homo_to_real_coord 将世界坐标系下的齐次坐标转换成 3*n 的坐标.
     pts_3d_world = homo_to_real_coord<double>(transToWolrd*real_to_homo_coord<double>(pts_3d_sensor)); //
+
+    // std::cout << "齐次像素点：\n" << pixels << std::endl;
+    // std::cout << "投影射线：\n" << pts_ray << std::endl;
+    // std::cout << "相机平面：\n" << plane_sensor << std::endl;
+    // std::cout << "相机系下的3D 点：\n" << pts_3d_sensor << std::endl;
+    // std::cout << "世界系下的3D 点：\n" << pts_3d_world << std::endl;
+
+/*
+齐次像素点：
+344.614   528.2  429.72 255.345
+    424 281.372 233.359 340.603
+      1       1       1       1
+投影射线：
+0.0457866  0.388681  0.204744 -0.120948
+ 0.327151 0.0626333 -0.026411  0.172483
+        1         1         1         1
+相机平面：
+  -0.1053
+-0.817599
+-0.566077
+   1.1019
+相机系下的3D 点：
+ 0.0601785   0.650682   0.398569  -0.191935
+  0.429983   0.104853 -0.0514136   0.273717
+   1.31432    1.67407    1.94667    1.58692
+世界系下的3D 点：
+   -1.7704   -1.58766    -1.1965   -1.37924
+  0.682643 -0.0592668  0.0370799   0.778989
+         0          0          0          0
+*/
 }
 
 // BRIEF 计算 wall_plane 的方程.

@@ -727,7 +727,7 @@ void detect_3d_cuboid::detect_cuboid(	const cv::Mat& rgb_img,
 																					 all_configs_error_one_objH(raw_cube_ind,8), 
 																					 cam_pose_raw.euler_angle(2));
 					set_cam_pose(transToWolrd_new);
-					// TODO 平面？
+					// 相机系下的地平面
 					ground_plane_sensor = cam_pose.transToWolrd.transpose()*ground_plane_world;
 				}
 
