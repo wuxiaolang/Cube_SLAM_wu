@@ -5,7 +5,7 @@ project(object_slam)
 set(CMAKE_CXX_STANDARD 11)
 # 设置编译模式Debug.
 IF(NOT CMAKE_BUILD_TYPE)
-  SET(CMAKE_BUILD_TYPE Debug)
+  SET(CMAKE_BUILD_TYPE Debug -g)
 ENDIF()
 MESSAGE("Build type: " ${CMAKE_BUILD_TYPE})
 
@@ -64,7 +64,7 @@ include_directories(
   ${PCL_INCLUDE_DIRS}
 )
 
-SET(CMAKE_BUILD_TYPE Release)
+# SET(CMAKE_BUILD_TYPE Release)
 # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall   -O3 -march=native")
 
 # C++11

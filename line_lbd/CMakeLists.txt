@@ -1,6 +1,13 @@
 cmake_minimum_required(VERSION 2.8.3)
 project(line_lbd)
 
+set(CMAKE_CXX_STANDARD 11)
+# 设置编译模式Debug.
+IF(NOT CMAKE_BUILD_TYPE)
+  SET(CMAKE_BUILD_TYPE Debug)
+ENDIF()
+MESSAGE("Build type: " ${CMAKE_BUILD_TYPE})
+
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
@@ -46,10 +53,10 @@ include_directories(
 )
 
 
-set(CMAKE_BUILD_TYPE Release)
-set(CMAKE_CXX_FLAGS
-   "${CMAKE_CXX_FLAGS} ${SSE_FLAGS} -march=native  -std=c++0x"
-) 
+# set(CMAKE_BUILD_TYPE Release)
+# set(CMAKE_CXX_FLAGS
+#    "${CMAKE_CXX_FLAGS} ${SSE_FLAGS} -march=native  -std=c++0x"
+# ) 
 
 ## Declare a C++ library
 add_library(line_lbd_lib
