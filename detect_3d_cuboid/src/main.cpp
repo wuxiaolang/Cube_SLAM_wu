@@ -27,7 +27,7 @@ using namespace Eigen;
 
 
 int main(int argc, char** argv)
-{        
+{
       ros::init (argc, argv, "detect_3d_cuboid");  
       ros::NodeHandle nh;
       ca::Profiler::enable();
