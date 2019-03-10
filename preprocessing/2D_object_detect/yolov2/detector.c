@@ -440,24 +440,42 @@ void validate_detector_recall(char *cfgfile, char *weightfile)
     }
 }
 
-
-void test_detector_folder(char *datacfg, char *cfgfile, char *weightfile, char *input_folder, char *output_folder, float thresh, float hier_thresh)
+// BRIEF    检测数据集图像.
+void test_detector_folder(  char *datacfg,          /* cfg/coco.data */
+                            char *cfgfile, 
+                            char *weightfile, 
+                            char *input_folder, 
+                            char *output_folder, 
+                            float thresh, 
+                            float hier_thresh)
 {
-    if( !(input_folder && output_folder) ){
-	printf("Please Provide Image Folder");
+    // if( !(input_folder && output_folder) ){
+	// printf("Please Provide Image Folder");
+	// return;
+    // }
+    if( !input_folder ){
+	printf("Please Provide Input Image Folder");
+	return;
+    }
+    if( !output_folder ){
+	printf("Please Provide Output Image Folder");
 	return;
     }
     
+    // 加载 coco.data
     list *options = read_data_cfg(datacfg);
-    char *name_list = option_find_str(options, "names", "data/names.list");
+    char *name_list = option_find_str(options, "names", "data/names.list");     // darknet/data/coco.names
     char **names = get_labels(name_list);        
-     
     
+    // 读取标签.
     image **alphabet = load_alphabet();
+    
+    // 加载配置文件和权重文件.
     network net = parse_network_cfg(cfgfile);
     if(weightfile){
         load_weights(&net, weightfile);
     }
+
     set_batch_network(&net, 1);
     srand(2222222);
     clock_t time;
