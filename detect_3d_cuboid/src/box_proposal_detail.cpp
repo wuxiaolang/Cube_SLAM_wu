@@ -210,6 +210,11 @@ void detect_3d_cuboid::detect_cuboid(	const cv::Mat& rgb_img,
 			// 【顶边上的采样点的x坐标】，如果边太大，则提供更多样本。为所有边缘提供至少10个样本。对于小物体，物体位姿会改变很多.
 			// NOTE 从边界框的最左边 left_x_raw+5 到最右边 right_x_raw-5 每隔 top_sample_resolution（20像素）的距离采样一个点top_x_samples[i].
 			int top_sample_resolution = round(min(20,obj_width_raw/10 )); //  25 pixels
+			
+			// NOTE 修复 bug，若 top_sample_resolution = 0 会出现 Floating point exception (core dumped) 的错误.
+			if(top_sample_resolution < 1)
+				break;
+			
 			std::vector<int> top_x_samples; 
 			linespace<int>(left_x_raw+5, right_x_raw-5, top_sample_resolution, top_x_samples);
 			// std::cout << "左：" << left_x_raw+5 << std::endl;
