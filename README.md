@@ -20,17 +20,17 @@ forked from [shichaoy/cube_slam](https://github.com/shichaoy/cube_slam)
 ## 3. combine with ORB-SLAM2
 ### 3.1 tum dataset
 
-[![](https://media.giphy.com/media/H3kd6k6gnuW60R68gJ/giphy.gif)](https://github.com/wuxiaolang/Cube_SLAM_wu/blob/master/wu/190525tum.gif)
-
 [![](https://media.giphy.com/media/dxaMwcKw9sriiT4xIl/giphy.gif)](https://github.com/wuxiaolang/Cube_SLAM_wu/blob/master/wu/190524tum.gif)
+
+<img src="https://github.com/wuxiaolang/Cube_SLAM_wu/blob/master/wu/190525tum.gif?raw=true" width="600">
 
 ### 3.2 kitti dataset
 
-![](https://media.giphy.com/media/KEGOPljrGWFqJY5MJK/giphy.gif)
+[![](https://media.giphy.com/media/KEGOPljrGWFqJY5MJK/giphy.gif)](https://github.com/wuxiaolang/Cube_SLAM_wu/blob/master/wu/191007all_out.gif)
 
 ### 3.3 real world
 
-![](https://media.giphy.com/media/fX37X2fpeihIgw2qyZ/giphy.gif)
+[![](https://media.giphy.com/media/fX37X2fpeihIgw2qyZ/giphy.gif)](https://github.com/wuxiaolang/Cube_SLAM_wu/blob/master/wu/190716realworld.gif)
 
 ---
 wuyanminmax@gmail.com
